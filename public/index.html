@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rotina TI Server</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-bg"></div>
+
+  <section id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <div class="login-icon">💻</div>
+      <p class="eyebrow">Acesso restrito</p>
+      <h1>Rotina TI</h1>
+      <p class="subtitle">Entre ou crie sua conta para acessar o painel operacional.</p>
+
+      <div class="auth-tabs">
+        <button id="showLogin" class="auth-tab active" type="button">Entrar</button>
+        <button id="showRegister" class="auth-tab" type="button">Criar conta</button>
+      </div>
+
+      <form id="loginForm" class="auth-form active">
+        <label>Usuário
+          <input id="loginUsuario" required autocomplete="username" placeholder="Ex: kaynan" />
+        </label>
+        <label>Senha
+          <input id="loginSenha" type="password" required autocomplete="current-password" placeholder="Digite sua senha" />
+        </label>
+        <button class="primary" type="submit">Entrar no painel</button>
+      </form>
+
+      <form id="registerForm" class="auth-form">
+        <label>Nome completo
+          <input id="registerNome" required placeholder="Ex: Kaynan Araujo" />
+        </label>
+        <label>Usuário
+          <input id="registerUsuario" required autocomplete="username" placeholder="Ex: kaynan" />
+        </label>
+        <label>Senha
+          <input id="registerSenha" type="password" required autocomplete="new-password" placeholder="Mínimo 4 caracteres" />
+        </label>
+        <label>Confirmar senha
+          <input id="registerConfirmar" type="password" required autocomplete="new-password" placeholder="Repita sua senha" />
+        </label>
+        <button class="primary" type="submit">Criar conta</button>
+      </form>
+
+      <small id="authMessage" class="form-message"></small>
+    </div>
+  </section>
+
+  <main id="appContent" class="container app-hidden">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Painel local compartilhado</p>
+        <h1>Rotina TI</h1>
+        <p class="subtitle">
+          Pendências individuais por usuário e equipamentos em manutenção compartilhados com a equipe.
+        </p>
+      </div>
+
+      <div class="today-card">
+        <span id="todayWeek">Hoje</span>
+        <strong id="todayDate">--/--/----</strong>
+        <small id="userInfo">Usuário</small>
+        <button id="logoutBtn" class="secondary logout-btn" type="button">Sair</button>
+      </div>
+    </header>
+
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span>Minhas pendências</span>
+        <strong id="statPendencias">0</strong>
+        <small>itens em aberto</small>
+      </article>
+
+      <article class="stat-card motivation-card">
+        <span>Foco do dia</span>
+        <strong id="motivacaoIcon">⚡</strong>
+        <small id="motivacaoTexto">Resolva uma coisa por vez. TI boa é TI organizada.</small>
+      </article>
+
+      <article class="stat-card">
+        <span>Manutenção</span>
+        <strong id="statManutencao">0</strong>
+        <small>compartilhado com todos</small>
+      </article>
+    </section>
+
+    <section class="tabs" aria-label="Seções do painel">
+      <button class="tab active" data-tab="pendencias" type="button">Minhas pendências</button>
+      <button class="tab" data-tab="manutencao" type="button">Equipamento em Manutenção</button>
+    </section>
+
+    <section id="resumoRotina" class="summary-grid"></section>
+
+    <section id="pendencias" class="panel active">
+      <div class="panel-header">
+        <div>
+          <h2>Minhas pendências</h2>
+          <p>Cada usuário vê somente as próprias tarefas.</p>
+        </div>
+      </div>
+
+      <form id="pendenciaForm" class="form-grid pendencia-form">
+        <input type="hidden" id="pendenciaId" />
+        <label>Descrição
+          <input id="pendenciaDescricao" required placeholder="Ex: Configurar Outlook da logística" />
+        </label>
+        <label>Setor
+          <input id="pendenciaSetor" placeholder="Ex: Logística" />
+        </label>
+        <label>Data
+          <input id="pendenciaData" type="date" />
+        </label>
+        <label>Hora
+          <input id="pendenciaHora" type="time" />
+        </label>
+        <label>Prioridade
+          <select id="pendenciaPrioridade">
+            <option>Baixa</option>
+            <option selected>Média</option>
+            <option>Alta</option>
+            <option>Urgente</option>
+          </select>
+        </label>
+        <label>Status
+          <select id="pendenciaStatus">
+            <option selected>Aberta</option>
+            <option>Em andamento</option>
+            <option>Concluída</option>
+          </select>
+        </label>
+        <button type="submit" class="primary">Salvar pendência</button>
+      </form>
+
+      <div id="pendenciasList" class="cards-list"></div>
+    </section>
+
+    <section id="manutencao" class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Equipamento em Manutenção</h2>
+          <p>Essa lista é compartilhada com todos. Cada ação mostra quem fez.</p>
+        </div>
+      </div>
+
+      <form id="manutencaoForm" class="form-grid manutencao-form">
+        <input type="hidden" id="manutencaoId" />
+        <label>Tipo
+          <select id="manutencaoTipo">
+            <option>CPU</option>
+            <option>Notebook</option>
+            <option>Monitor</option>
+            <option>Impressora</option>
+            <option>Celular</option>
+            <option>Periférico</option>
+            <option>Outro</option>
+          </select>
+        </label>
+        <label>Patrimônio
+          <input id="manutencaoPatrimonio" placeholder="Nº patrimônio" />
+        </label>
+        <label>Marca / Modelo
+          <input id="manutencaoModelo" placeholder="Ex: Dell Optiplex 7020" />
+        </label>
+        <label>Serial
+          <input id="manutencaoSerial" placeholder="Número de série" />
+        </label>
+        <label>Setor / Usuário
+          <input id="manutencaoResponsavel" placeholder="Ex: RH - Ana" />
+        </label>
+        <label>Enviado para
+          <input id="manutencaoDestino" placeholder="Ex: Garantia / Assistência / Matriz" />
+        </label>
+        <label>Data de envio
+          <input id="manutencaoData" type="date" />
+        </label>
+        <label>Status
+          <select id="manutencaoStatus">
+            <option selected>Enviado</option>
+            <option>Aguardando orçamento</option>
+            <option>Em análise</option>
+            <option>Consertado</option>
+            <option>Retornou</option>
+          </select>
+        </label>
+        <label class="pdf-field">Anexar PDF opcional
+          <input id="manutencaoPdf" type="file" accept="application/pdf" />
+        </label>
+        <label class="full">Defeito / Observações
+          <textarea id="manutencaoObs" rows="3" placeholder="Ex: Não liga, fonte queimada, tela quebrada..."></textarea>
+        </label>
+
+        <button type="submit" class="primary">Salvar manutenção</button>
+      </form>
+
+      <div id="manutencoesList" class="cards-list"></div>
+    </section>
+  </main>
+
+  <template id="emptyTemplate">
+    <div class="empty-state">
+      <strong>Nenhum registro encontrado</strong>
+      <span>Cadastre um item acima para começar.</span>
+    </div>
+  </template>
+
+  <div id="toast" class="toast"></div>
+  <script src="script.js"></script>
+</body>
+</html>
