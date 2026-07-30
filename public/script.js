@@ -1,3 +1,9 @@
+const IP_AUTO_CHECK_INTERVAL_MS = 3000;
+let autoIpCheckTimer = null;
+let autoIpCheckRunning = false;
+let autoIpCheckEnabled = false;
+let ipCheckPromise = null;
+
 let currentUser = null;
 let pendencias = [];
 let historicoTarefas = [];
@@ -23,22 +29,23 @@ const norm = (text) =>
     .replace(/[\u0300-\u036f]/g, "");
 
 async function api(url, options = {}) {
-  sleepController?.beginBusy();
+  const { trackBusy = true, ...requestOptions } = options;
+  if (trackBusy) sleepController?.beginBusy();
   try {
     const response = await fetch(url, {
       credentials: "same-origin",
       headers:
-        options.body instanceof FormData
+        requestOptions.body instanceof FormData
           ? undefined
           : { "Content-Type": "application/json" },
-      ...options,
+      ...requestOptions,
     });
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Erro na requisição.");
     return data;
   } finally {
-    sleepController?.endBusy();
+    if (trackBusy) sleepController?.endBusy();
   }
 }
 
@@ -264,6 +271,7 @@ async function checkAuth() {
     currentUser = data.user;
     showApp();
     await loadAll();
+    iniciarAutoVerificacaoIps();
   } else {
     $("showRegister").classList.toggle("app-hidden", !data.setupRequired);
     if (!data.setupRequired) switchAuth("login");
@@ -304,6 +312,7 @@ function setupForms() {
       showToast("Login realizado com sucesso");
       showApp();
       await loadAll();
+      iniciarAutoVerificacaoIps();
     } catch (error) {
       $("authMessage").textContent = error.message;
       $("loginSenha").value = "";
@@ -335,6 +344,7 @@ function setupForms() {
       showToast("Conta criada com sucesso");
       showApp();
       await loadAll();
+      iniciarAutoVerificacaoIps();
     } catch (error) {
       $("authMessage").textContent = error.message;
     } finally {
@@ -385,6 +395,7 @@ function setupForms() {
         method: "POST",
         body: JSON.stringify({}),
       });
+      pararAutoVerificacaoIps();
       location.reload();
     } catch (error) {
       showToast(error.message || "Não foi possível sair.", 4200);
@@ -396,7 +407,9 @@ function setupForms() {
   $("manutencaoForm").addEventListener("submit", saveManutencao);
   $("ipForm").addEventListener("submit", saveIp);
   $("ipBusca").addEventListener("input", renderIps);
-  $("verificarTodosIps").addEventListener("click", verificarTodosIps);
+  $("verificarTodosIps").addEventListener("click", () =>
+    verificarTodosIps(),
+  );
   $("cancelarEdicaoIp").addEventListener("click", resetIpForm);
 
   $("adminCreateUserForm")?.addEventListener("submit", async (e) => {
@@ -1587,31 +1600,114 @@ async function verificarIp(id) {
   });
 }
 
-async function verificarTodosIps() {
-  const button = $("verificarTodosIps");
-  if (!ipsMonitorados.length) {
-    showToast("Cadastre pelo menos um IP");
+async function executarAutoVerificacaoIps() {
+  autoIpCheckTimer = null;
+  if (!autoIpCheckEnabled) return;
+  if (autoIpCheckRunning) return;
+
+  const appContent = document.getElementById("appContent");
+  if (!appContent || appContent.classList.contains("app-hidden")) {
+    agendarAutoVerificacaoIps();
     return;
   }
 
+  if (!ipsMonitorados.length) {
+    agendarAutoVerificacaoIps();
+    return;
+  }
+
+  autoIpCheckRunning = true;
+
   try {
-    button.disabled = true;
-    button.textContent = "Verificando...";
-    ipsMonitorados = await api("/api/ips/verificar-todos", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    renderIps();
-    renderDashboard();
-    const online = ipsMonitorados.filter(
-      (item) => item.status === "Online",
-    ).length;
-    showToast(`${online} de ${ipsMonitorados.length} IPs responderam`);
+    await verificarTodosIps({ silent: true });
   } catch (error) {
-    showToast(error.message);
+    console.error("Falha na verificação automática de IPs:", error);
   } finally {
-    button.disabled = false;
-    button.textContent = "Verificar todos";
+    autoIpCheckRunning = false;
+    agendarAutoVerificacaoIps();
+  }
+}
+
+function agendarAutoVerificacaoIps() {
+  clearTimeout(autoIpCheckTimer);
+  autoIpCheckTimer = null;
+  if (!autoIpCheckEnabled) return;
+
+  autoIpCheckTimer = setTimeout(
+    executarAutoVerificacaoIps,
+    IP_AUTO_CHECK_INTERVAL_MS,
+  );
+}
+
+function iniciarAutoVerificacaoIps() {
+  autoIpCheckEnabled = true;
+  agendarAutoVerificacaoIps();
+}
+
+function pararAutoVerificacaoIps() {
+  autoIpCheckEnabled = false;
+  clearTimeout(autoIpCheckTimer);
+  autoIpCheckTimer = null;
+  autoIpCheckRunning = false;
+}
+
+async function verificarTodosIps({ silent = false } = {}) {
+  const button = $("verificarTodosIps");
+  if (!ipsMonitorados.length) {
+    if (!silent) showToast("Cadastre pelo menos um IP");
+    return;
+  }
+
+  if (!silent) {
+    sleepController?.beginBusy();
+  }
+
+  let operation = ipCheckPromise;
+  if (!operation) {
+    operation = (async () => {
+      const updatedIps = await api("/api/ips/verificar-todos", {
+        method: "POST",
+        body: JSON.stringify({}),
+        trackBusy: false,
+      });
+      ipsMonitorados = updatedIps;
+      renderIps();
+      renderDashboard();
+      return updatedIps;
+    })();
+    ipCheckPromise = operation;
+  }
+
+  try {
+    if (!silent && button) {
+      button.disabled = true;
+      button.textContent = "Verificando...";
+    }
+
+    await operation;
+
+    if (!silent) {
+      const online = ipsMonitorados.filter(
+        (item) => item.status === "Online",
+      ).length;
+      showToast(`${online} de ${ipsMonitorados.length} IPs responderam`);
+    }
+  } catch (error) {
+    if (silent) throw error;
+    showToast(error.message || "Não foi possível verificar os IPs.");
+  } finally {
+    if (ipCheckPromise === operation) {
+      ipCheckPromise = null;
+    }
+
+    if (!silent && button) {
+      button.disabled = false;
+      button.textContent = "Verificar todos";
+    }
+
+    if (!silent) {
+      sleepController?.endBusy();
+    }
   }
 }
 
