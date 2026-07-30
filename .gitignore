@@ -1,0 +1,28 @@
+# Dependências
+node_modules/
+
+# Banco de dados e arquivos enviados
+database.db
+database.db-*
+uploads/
+
+# Dados internos da empresa
+importar-ips.js
+importar-ips.bat
+
+# Configurações e segredos
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Arquivos temporários do Windows
+Thumbs.db
+Desktop.ini
+
+# Pacotes e backups
+*.zip
+backup/

@@ -1,18 +1,24 @@
 {
   "name": "rotina-ti-server",
-  "version": "2.0.0",
-  "description": "Rotina TI com login, SQLite e anexos PDF",
+  "version": "2.2.0",
+  "private": true,
+  "description": "Rotina TI com login, SQLite, anexos PDF, repetição semanal e histórico de tarefas concluídas",
   "main": "server.js",
   "author": "Kaynan",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.17.0"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js && node --check database.js && node --check public/sleep-screen.js && node --check public/dashboard-model.js && node --check public/script.js",
+    "test": "node --test"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "express": "^4.18.3",
-    "express-session": "^1.18.0",
-    "multer": "^1.4.5-lts.1",
-    "sqlite3": "^5.1.7"
+    "express": "^4.22.2",
+    "express-session": "^1.19.0",
+    "multer": "^2.2.0",
+    "sqlite3": "^6.0.1"
   }
 }

@@ -1,214 +1,1135 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Rotina TI Server</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <div class="app-bg"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rotina TI Server</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-bg"></div>
 
-  <section id="authScreen" class="auth-screen">
-    <div class="auth-card">
-      <div class="login-icon">💻</div>
-      <p class="eyebrow">Acesso restrito</p>
-      <h1>Rotina TI</h1>
-      <p class="subtitle">Entre ou crie sua conta para acessar o painel operacional.</p>
-
-      <div class="auth-tabs">
-        <button id="showLogin" class="auth-tab active" type="button">Entrar</button>
-        <button id="showRegister" class="auth-tab" type="button">Criar conta</button>
-      </div>
-
-      <form id="loginForm" class="auth-form active">
-        <label>Usuário
-          <input id="loginUsuario" required autocomplete="username" placeholder="Ex: kaynan" />
-        </label>
-        <label>Senha
-          <input id="loginSenha" type="password" required autocomplete="current-password" placeholder="Digite sua senha" />
-        </label>
-        <button class="primary" type="submit">Entrar no painel</button>
-      </form>
-
-      <form id="registerForm" class="auth-form">
-        <label>Nome completo
-          <input id="registerNome" required placeholder="Ex: Kaynan Araujo" />
-        </label>
-        <label>Usuário
-          <input id="registerUsuario" required autocomplete="username" placeholder="Ex: kaynan" />
-        </label>
-        <label>Senha
-          <input id="registerSenha" type="password" required autocomplete="new-password" placeholder="Mínimo 4 caracteres" />
-        </label>
-        <label>Confirmar senha
-          <input id="registerConfirmar" type="password" required autocomplete="new-password" placeholder="Repita sua senha" />
-        </label>
-        <button class="primary" type="submit">Criar conta</button>
-      </form>
-
-      <small id="authMessage" class="form-message"></small>
-    </div>
-  </section>
-
-  <main id="appContent" class="container app-hidden">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">Painel local compartilhado</p>
+    <section id="authScreen" class="auth-screen">
+      <div class="auth-card">
+        <div class="login-icon">💻</div>
+        <p class="eyebrow">Acesso restrito</p>
         <h1>Rotina TI</h1>
         <p class="subtitle">
-          Pendências individuais por usuário e equipamentos em manutenção compartilhados com a equipe.
+          Entre para acessar o painel operacional. A criação de usuários é
+          controlada pelo administrador.
         </p>
+
+        <div class="auth-tabs">
+          <button id="showLogin" class="auth-tab active" type="button">
+            Entrar
+          </button>
+          <button id="showRegister" class="auth-tab" type="button">
+            Criar conta
+          </button>
+          <button id="showReset" class="auth-tab app-hidden" type="button">
+            Recuperar senha
+          </button>
+        </div>
+
+        <form id="loginForm" class="auth-form active">
+          <label
+            >Usuário
+            <input
+              id="loginUsuario"
+              required
+              autocomplete="username"
+              placeholder="Ex: kaynan"
+            />
+          </label>
+          <label
+            >Senha
+            <input
+              id="loginSenha"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="Digite sua senha"
+            />
+          </label>
+          <button class="primary" type="submit">Entrar no painel</button>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+          <label
+            >Nome completo
+            <input id="registerNome" required placeholder="Ex: Kaynan Araujo" />
+          </label>
+          <label
+            >Usuário
+            <input
+              id="registerUsuario"
+              required
+              autocomplete="username"
+              placeholder="Ex: kaynan"
+            />
+          </label>
+          <label
+            >Senha
+            <input
+              id="registerSenha"
+              type="password"
+              required
+              autocomplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              minlength="8"
+            />
+          </label>
+          <label
+            >Confirmar senha
+            <input
+              id="registerConfirmar"
+              type="password"
+              required
+              autocomplete="new-password"
+              placeholder="Repita sua senha"
+            />
+          </label>
+          <button class="primary" type="submit">Criar conta</button>
+        </form>
+
+        <form id="resetForm" class="auth-form">
+          <p class="helper-text">
+            Recuperação feita pelo administrador. Informe o login de um admin e
+            defina a nova senha do usuário.
+          </p>
+          <label
+            >Usuário que esqueceu a senha
+            <input
+              id="resetUsuario"
+              required
+              autocomplete="username"
+              placeholder="Ex: joao"
+            />
+          </label>
+          <label
+            >Nova senha
+            <input
+              id="resetNovaSenha"
+              type="password"
+              required
+              autocomplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              minlength="8"
+            />
+          </label>
+          <label
+            >Confirmar nova senha
+            <input
+              id="resetConfirmarSenha"
+              type="password"
+              required
+              autocomplete="new-password"
+              placeholder="Repita a nova senha"
+            />
+          </label>
+          <label
+            >Usuário admin
+            <input
+              id="resetAdminUsuario"
+              required
+              autocomplete="username"
+              placeholder="Ex: kaynan"
+            />
+          </label>
+          <label
+            >Senha do admin
+            <input
+              id="resetAdminSenha"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="Senha do administrador"
+            />
+          </label>
+          <button class="primary" type="submit">Alterar senha</button>
+        </form>
+
+        <small id="authMessage" class="form-message"></small>
       </div>
-
-      <div class="today-card">
-        <span id="todayWeek">Hoje</span>
-        <strong id="todayDate">--/--/----</strong>
-        <small id="userInfo">Usuário</small>
-        <button id="logoutBtn" class="secondary logout-btn" type="button">Sair</button>
-      </div>
-    </header>
-
-    <section class="stats-grid">
-      <article class="stat-card">
-        <span>Minhas pendências</span>
-        <strong id="statPendencias">0</strong>
-        <small>itens em aberto</small>
-      </article>
-
-      <article class="stat-card motivation-card">
-        <span>Foco do dia</span>
-        <strong id="motivacaoIcon">⚡</strong>
-        <small id="motivacaoTexto">Resolva uma coisa por vez. TI boa é TI organizada.</small>
-      </article>
-
-      <article class="stat-card">
-        <span>Manutenção</span>
-        <strong id="statManutencao">0</strong>
-        <small>compartilhado com todos</small>
-      </article>
     </section>
 
-    <section class="tabs" aria-label="Seções do painel">
-      <button class="tab active" data-tab="pendencias" type="button">Minhas pendências</button>
-      <button class="tab" data-tab="manutencao" type="button">Equipamento em Manutenção</button>
-    </section>
-
-    <section id="resumoRotina" class="summary-grid"></section>
-
-    <section id="pendencias" class="panel active">
-      <div class="panel-header">
+    <main id="appContent" class="container app-hidden">
+      <header class="hero">
         <div>
-          <h2>Minhas pendências</h2>
-          <p>Cada usuário vê somente as próprias tarefas.</p>
+          <p class="eyebrow">Painel local compartilhado</p>
+          <h1>Rotina TI</h1>
+          <p class="subtitle">
+            Pendências individuais por usuário e equipamentos em manutenção
+            compartilhados com a equipe.
+          </p>
+        </div>
+
+        <div class="today-card">
+          <span id="todayWeek">Hoje</span>
+          <strong id="todayDate">--/--/----</strong>
+          <small id="userInfo">Usuário</small>
+          <div class="session-actions">
+            <button
+              id="openSleepScreen"
+              class="secondary logout-btn"
+              type="button"
+            >
+              Tela de descanso
+            </button>
+            <button id="logoutBtn" class="secondary logout-btn" type="button">
+              Sair
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section class="tabs" aria-label="Seções do painel">
+        <button class="tab active" data-tab="dashboard" type="button">
+          Visão Geral
+        </button>
+        <button class="tab" data-tab="pendencias" type="button">
+          Minhas pendências
+        </button>
+        <button class="tab" data-tab="manutencao" type="button">
+          Equipamento em Manutenção
+        </button>
+        <button class="tab" data-tab="historicoTarefas" type="button">
+          Histórico de tarefas
+        </button>
+        <button class="tab" data-tab="historicoManutencoes" type="button">
+          Histórico de manutenções
+        </button>
+        <button class="tab" data-tab="monitorIps" type="button">
+          Monitor de IPs
+        </button>
+        <button
+          id="adminTab"
+          class="tab app-hidden"
+          data-tab="administracao"
+          type="button"
+        >
+          Administração
+        </button>
+      </section>
+
+      <section
+        id="dashboard"
+        class="panel dashboard-panel active"
+        aria-labelledby="dashboardTitle"
+      >
+        <div class="dashboard-welcome">
+          <div class="dashboard-welcome-copy">
+            <p class="dashboard-kicker">Visão Geral</p>
+            <h2 id="dashboardTitle">
+              <span id="dashboardGreeting">Olá, usuário</span>
+            </h2>
+            <p id="dashboardFullDate" class="dashboard-full-date">
+              Carregando a data atual...
+            </p>
+            <p class="dashboard-intro">
+              Acompanhe em um só lugar o que precisa da sua atenção no Rotina
+              TI.
+            </p>
+          </div>
+
+          <div class="dashboard-refresh-box">
+            <span>Última atualização</span>
+            <strong id="dashboardUpdatedAt">Aguardando dados</strong>
+            <button
+              id="dashboardRefresh"
+              class="dashboard-refresh-button"
+              type="button"
+              aria-label="Atualizar dados da Visão Geral"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"></path>
+              </svg>
+              Atualizar
+            </button>
+          </div>
+        </div>
+
+        <div
+          id="dashboardStatus"
+          class="dashboard-status"
+          role="status"
+          aria-live="polite"
+        >
+          Carregando a visão geral...
+        </div>
+
+        <section
+          class="dashboard-section"
+          aria-labelledby="dashboardMetricsTitle"
+        >
+          <div class="dashboard-section-heading">
+            <div>
+              <span class="dashboard-section-kicker">Indicadores</span>
+              <h3 id="dashboardMetricsTitle">O que merece atenção agora</h3>
+            </div>
+            <small>Selecione um card para abrir a área correspondente.</small>
+          </div>
+
+          <div class="dashboard-metrics-grid">
+            <button
+              class="dashboard-metric-card dashboard-accent-gold"
+              type="button"
+              data-dashboard-target="pendencias"
+              data-dashboard-filter="abertas"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M8 6h11M8 12h11M8 18h7"></path>
+                  <path
+                    d="m3 6 .7.7L5.4 5M3 12l.7.7L5.4 11M3 18l.7.7L5.4 17"
+                  ></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Minhas pendências abertas</span>
+                <strong id="dashboardPendenciasAbertas">0</strong>
+                <small>itens sob sua responsabilidade</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-danger"
+              type="button"
+              data-dashboard-target="pendencias"
+              data-dashboard-filter="atrasadas"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 9v4M12 17h.01"></path>
+                  <path
+                    d="M10.3 3.8 2.7 17a2 2 0 0 0 1.73 3h15.14a2 2 0 0 0 1.73-3L13.7 3.8a2 2 0 0 0-3.4 0Z"
+                  ></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Minhas pendências atrasadas</span>
+                <strong id="dashboardPendenciasAtrasadas">0</strong>
+                <small>com data anterior a hoje</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-blue"
+              type="button"
+              data-dashboard-target="pendencias"
+              data-dashboard-filter="hoje"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M7 2v3M17 2v3M3 9h18"></path>
+                  <rect x="3" y="4" width="18" height="17" rx="2"></rect>
+                  <path d="m9 15 2 2 4-5"></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Minhas tarefas para hoje</span>
+                <strong id="dashboardTarefasHoje">0</strong>
+                <small>programadas para a data atual</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-success"
+              type="button"
+              data-dashboard-target="historicoTarefas"
+              data-dashboard-filter="concluidas-7-dias"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M20 6 9 17l-5-5"></path>
+                  <path d="M21 12a9 9 0 1 1-5.3-8.2"></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Concluídas nos últimos 7 dias</span>
+                <strong id="dashboardConcluidas7Dias">0</strong>
+                <small>suas entregas mais recentes</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-silver"
+              type="button"
+              data-dashboard-target="manutencao"
+              data-dashboard-filter="ativas"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="m14.7 6.3 3-3a4.2 4.2 0 0 1-5.6 5.6l-7.4 7.4a2.1 2.1 0 1 0 3 3l7.4-7.4a4.2 4.2 0 0 1 5.6-5.6l-3 3"
+                  ></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Equipamentos em manutenção</span>
+                <strong id="dashboardManutencoesAtivas">0</strong>
+                <small>registros ativos da equipe</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-warning"
+              type="button"
+              data-dashboard-target="manutencao"
+              data-dashboard-filter="aguardando-retorno"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+                  <path d="M3 3v5h5M12 7v5l3 2"></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Aguardando retorno</span>
+                <strong id="dashboardAguardandoRetorno">0</strong>
+                <small>equipamentos a caminho de volta</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-blue"
+              type="button"
+              data-dashboard-target="monitorIps"
+              data-dashboard-filter="todos"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                  <path d="M8 20h8M12 16v4M7 10h.01M11 10h6"></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Total de IPs monitorados</span>
+                <strong id="dashboardIpsTotal">0</strong>
+                <small>equipamentos compartilhados</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button
+              class="dashboard-metric-card dashboard-accent-danger"
+              type="button"
+              data-dashboard-target="monitorIps"
+              data-dashboard-filter="offline"
+            >
+              <span class="dashboard-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M5 12.6a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"
+                  ></path>
+                  <path d="m3 3 18 18"></path>
+                </svg>
+              </span>
+              <span class="dashboard-metric-copy">
+                <span>Quantidade de IPs offline</span>
+                <strong id="dashboardIpsOffline">0</strong>
+                <small>sem resposta na última verificação</small>
+              </span>
+              <span class="dashboard-card-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </section>
+
+        <section
+          class="dashboard-section"
+          aria-labelledby="dashboardChartsTitle"
+        >
+          <div class="dashboard-section-heading">
+            <div>
+              <span class="dashboard-section-kicker">Distribuição</span>
+              <h3 id="dashboardChartsTitle">Leitura rápida dos indicadores</h3>
+            </div>
+            <small>Gráficos locais, sem dependências externas.</small>
+          </div>
+
+          <div class="dashboard-charts-grid">
+            <article class="dashboard-chart-card">
+              <div class="dashboard-chart-heading">
+                <div>
+                  <span>Minhas pendências</span>
+                  <h4>Por prioridade</h4>
+                </div>
+                <span class="dashboard-chart-symbol" aria-hidden="true">P</span>
+              </div>
+              <div
+                id="dashboardPrioridadeChart"
+                class="dashboard-bar-chart"
+              ></div>
+            </article>
+
+            <article class="dashboard-chart-card">
+              <div class="dashboard-chart-heading">
+                <div>
+                  <span>Manutenção compartilhada</span>
+                  <h4>Por status</h4>
+                </div>
+                <span class="dashboard-chart-symbol" aria-hidden="true">M</span>
+              </div>
+              <div
+                id="dashboardManutencaoChart"
+                class="dashboard-bar-chart dashboard-maintenance-chart"
+              ></div>
+            </article>
+
+            <article class="dashboard-chart-card dashboard-ip-chart-card">
+              <div class="dashboard-chart-heading">
+                <div>
+                  <span>Monitor de rede</span>
+                  <h4>IPs online e offline</h4>
+                </div>
+                <span class="dashboard-chart-symbol" aria-hidden="true"
+                  >IP</span
+                >
+              </div>
+              <div id="dashboardIpChart" class="dashboard-ip-chart"></div>
+            </article>
+          </div>
+        </section>
+
+        <section
+          class="dashboard-section"
+          aria-labelledby="dashboardOperationsTitle"
+        >
+          <div class="dashboard-section-heading">
+            <div>
+              <span class="dashboard-section-kicker">Operação</span>
+              <h3 id="dashboardOperationsTitle">Detalhes que pedem ação</h3>
+            </div>
+            <small>Até cinco registros por área.</small>
+          </div>
+
+          <div class="dashboard-operations-grid">
+            <article class="dashboard-list-card">
+              <div class="dashboard-list-heading">
+                <div>
+                  <span class="dashboard-list-icon" aria-hidden="true">01</span>
+                  <div>
+                    <h4>Próximas pendências</h4>
+                    <p>Ordenadas por data e hora</p>
+                  </div>
+                </div>
+                <button
+                  class="dashboard-text-link"
+                  type="button"
+                  data-dashboard-target="pendencias"
+                >
+                  Ver todas
+                </button>
+              </div>
+              <div
+                id="dashboardProximasList"
+                class="dashboard-record-list"
+              ></div>
+            </article>
+
+            <article class="dashboard-list-card">
+              <div class="dashboard-list-heading">
+                <div>
+                  <span class="dashboard-list-icon" aria-hidden="true">02</span>
+                  <div>
+                    <h4>Há mais tempo em manutenção</h4>
+                    <p>Envios ativos mais antigos</p>
+                  </div>
+                </div>
+                <button
+                  class="dashboard-text-link"
+                  type="button"
+                  data-dashboard-target="manutencao"
+                >
+                  Ver todas
+                </button>
+              </div>
+              <div
+                id="dashboardManutencoesList"
+                class="dashboard-record-list"
+              ></div>
+            </article>
+
+            <article class="dashboard-list-card">
+              <div class="dashboard-list-heading">
+                <div>
+                  <span class="dashboard-list-icon" aria-hidden="true">03</span>
+                  <div>
+                    <h4>IPs offline</h4>
+                    <p>Última situação conhecida</p>
+                  </div>
+                </div>
+                <button
+                  class="dashboard-text-link"
+                  type="button"
+                  data-dashboard-target="monitorIps"
+                  data-dashboard-filter="offline"
+                >
+                  Ver todos
+                </button>
+              </div>
+              <div
+                id="dashboardOfflineList"
+                class="dashboard-record-list"
+              ></div>
+            </article>
+          </div>
+        </section>
+
+        <section
+          class="dashboard-section dashboard-activity-section"
+          aria-labelledby="dashboardActivityTitle"
+        >
+          <div class="dashboard-section-heading">
+            <div>
+              <span class="dashboard-section-kicker">Equipe</span>
+              <h3 id="dashboardActivityTitle">Atividades recentes</h3>
+            </div>
+            <small>Somente movimentações compartilhadas de manutenção.</small>
+          </div>
+          <div
+            id="dashboardActivitiesList"
+            class="dashboard-activity-list"
+          ></div>
+        </section>
+
+        <section
+          class="dashboard-section dashboard-existing-summary"
+          aria-labelledby="dashboardRoutineTitle"
+        >
+          <div class="dashboard-section-heading">
+            <div>
+              <span class="dashboard-section-kicker">Rotina</span>
+              <h3 id="dashboardRoutineTitle">Resumo rápido do painel</h3>
+            </div>
+            <small
+              >Indicadores e foco do dia preservados da visão anterior.</small
+            >
+          </div>
+
+          <section class="stats-grid">
+            <article class="stat-card">
+              <span>Minhas pendências</span>
+              <strong id="statPendencias">0</strong>
+              <small>itens em aberto</small>
+            </article>
+
+            <article class="stat-card motivation-card">
+              <span>Foco do dia</span>
+              <strong id="motivacaoIcon">⚡</strong>
+              <small id="motivacaoTexto"
+                >Resolva uma coisa por vez. TI boa é TI organizada.</small
+              >
+            </article>
+
+            <article class="stat-card">
+              <span>Manutenção</span>
+              <strong id="statManutencao">0</strong>
+              <small>compartilhado com todos</small>
+            </article>
+          </section>
+
+          <section id="resumoRotina" class="summary-grid"></section>
+        </section>
+      </section>
+
+      <section id="pendencias" class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Minhas pendências</h2>
+            <p>Cada usuário vê somente as próprias tarefas.</p>
+          </div>
+        </div>
+
+        <form id="pendenciaForm" class="form-grid pendencia-form">
+          <input type="hidden" id="pendenciaId" />
+          <label
+            >Descrição
+            <input
+              id="pendenciaDescricao"
+              required
+              placeholder="Ex: Configurar Outlook da logística"
+            />
+          </label>
+          <label
+            >Setor
+            <input id="pendenciaSetor" placeholder="Ex: Logística" />
+          </label>
+          <label
+            >Data
+            <input id="pendenciaData" type="date" />
+          </label>
+          <label
+            >Hora
+            <input id="pendenciaHora" type="time" />
+          </label>
+          <label
+            >Prioridade
+            <select id="pendenciaPrioridade">
+              <option>Baixa</option>
+              <option selected>Média</option>
+              <option>Alta</option>
+              <option>Urgente</option>
+            </select>
+          </label>
+          <label
+            >Repetir tarefa
+            <select id="pendenciaRepeticao">
+              <option selected>Nenhuma</option>
+              <option value="Semanal">Toda semana</option>
+            </select>
+          </label>
+          <label
+            >Status
+            <select id="pendenciaStatus">
+              <option selected>Aberta</option>
+              <option>Em andamento</option>
+            </select>
+          </label>
+          <button type="submit" class="primary">Salvar pendência</button>
+        </form>
+
+        <div id="pendenciasList" class="cards-list"></div>
+      </section>
+
+      <section id="historicoTarefas" class="panel history-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Histórico de tarefas concluídas</h2>
+            <p>Cada usuário vê somente as próprias tarefas finalizadas.</p>
+          </div>
+          <div class="history-total">
+            <span>Concluídas</span>
+            <strong id="historicoCount">0</strong>
+          </div>
+        </div>
+
+        <div class="history-toolbar">
+          <label
+            >Pesquisar no histórico
+            <input
+              id="historicoBusca"
+              type="search"
+              placeholder="Descrição, setor, prioridade ou data..."
+              autocomplete="off"
+            />
+          </label>
+          <button id="limparBuscaHistorico" class="secondary" type="button">
+            Limpar pesquisa
+          </button>
+        </div>
+
+        <div id="historicoTarefasList" class="cards-list history-list"></div>
+      </section>
+
+      <section id="manutencao" class="panel manutencao-premium">
+        <div class="panel-header">
+          <div>
+            <h2>Equipamento em Manutenção</h2>
+            <p>
+              Essa lista é compartilhada com todos. Cada ação mostra quem fez.
+            </p>
+          </div>
+        </div>
+
+        <form
+          id="manutencaoForm"
+          class="form-grid manutencao-form premium-maintenance-form"
+        >
+          <input type="hidden" id="manutencaoId" />
+          <label
+            >Tipo
+            <select id="manutencaoTipo">
+              <option>CPU</option>
+              <option>Notebook</option>
+              <option>Monitor</option>
+              <option>Impressora</option>
+              <option>Tablet</option>
+              <option>Coletor</option>
+              <option>Leitor de mesa</option>
+              <option>Celular</option>
+              <option>Telefone</option>
+              <option>Periférico</option>
+              <option>Outro</option>
+            </select>
+          </label>
+          <label
+            >Patrimônio
+            <input id="manutencaoPatrimonio" placeholder="Nº patrimônio" />
+          </label>
+          <label
+            >Marca / Modelo
+            <input id="manutencaoModelo" placeholder="Ex: Dell Optiplex 7020" />
+          </label>
+          <label
+            >Serial
+            <input id="manutencaoSerial" placeholder="Número de série" />
+          </label>
+          <label
+            >Setor / Usuário
+            <input id="manutencaoResponsavel" placeholder="Ex: RH - Ana" />
+          </label>
+          <label
+            >Enviado para
+            <input
+              id="manutencaoDestino"
+              placeholder="Ex: Garantia / Assistência / Matriz"
+            />
+          </label>
+          <label
+            >Data de envio
+            <input id="manutencaoData" type="date" />
+          </label>
+          <label
+            >Status
+            <select id="manutencaoStatus">
+              <option selected>Enviado</option>
+              <option>Aguardando coleta</option>
+              <option>Aguardando orçamento</option>
+              <option>Em análise</option>
+              <option>Consertado</option>
+              <option>Aguardando retorno do equipamento</option>
+              <option>Aguardando Pedido</option>
+            </select>
+          </label>
+          <label class="pdf-field"
+            >Anexar PDFs opcionais
+            <input
+              id="manutencaoPdf"
+              type="file"
+              accept="application/pdf"
+              multiple
+            />
+          </label>
+          <label class="full"
+            >Defeito / Observações
+            <textarea
+              id="manutencaoObs"
+              rows="3"
+              placeholder="Ex: Não liga, fonte queimada, tela quebrada..."
+            ></textarea>
+          </label>
+
+          <button type="submit" class="primary">Salvar manutenção</button>
+        </form>
+
+        <div
+          id="manutencoesList"
+          class="cards-list manutencao-lista-premium"
+        ></div>
+      </section>
+
+      <section
+        id="historicoManutencoes"
+        class="panel history-panel maintenance-history-panel"
+      >
+        <div class="panel-header">
+          <div>
+            <h2>Histórico de manutenções</h2>
+            <p>
+              Equipamentos que já retornaram. Este histórico é compartilhado com
+              toda a equipe.
+            </p>
+          </div>
+          <div class="history-total">
+            <span>Retornaram</span>
+            <strong id="historicoManutencoesCount">0</strong>
+          </div>
+        </div>
+
+        <div class="history-toolbar">
+          <label
+            >Pesquisar no histórico
+            <input
+              id="historicoManutencoesBusca"
+              type="search"
+              placeholder="Tipo, patrimônio, modelo, serial, responsável ou destino..."
+              autocomplete="off"
+            />
+          </label>
+          <button
+            id="limparBuscaHistoricoManutencoes"
+            class="secondary"
+            type="button"
+          >
+            Limpar pesquisa
+          </button>
+        </div>
+
+        <div
+          id="historicoManutencoesList"
+          class="cards-list history-list"
+        ></div>
+      </section>
+      <section id="monitorIps" class="panel ip-monitor-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Monitor de IPs</h2>
+            <p>
+              Cadastre manualmente os equipamentos que deseja acompanhar. A
+              lista é compartilhada com toda a equipe.
+            </p>
+          </div>
+          <div class="ip-summary">
+            <span>Online</span>
+            <strong id="ipsOnlineCount">0</strong>
+            <small><span id="ipsOfflineCount">0</span> offline</small>
+          </div>
+        </div>
+
+        <div class="ip-category-tabs" aria-label="Categorias de IP">
+          <button
+            class="ip-category-tab active"
+            type="button"
+            data-ip-category="Todos"
+          >
+            Todos <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Relógio"
+          >
+            Relógios <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Switch"
+          >
+            Switches <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Computador"
+          >
+            Computadores <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Impressora"
+          >
+            Impressoras <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Access Point"
+          >
+            Access Points <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Câmera"
+          >
+            Câmeras <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Servidor"
+          >
+            Servidores <span class="ip-category-count">0</span>
+          </button>
+          <button
+            class="ip-category-tab"
+            type="button"
+            data-ip-category="Outro"
+          >
+            Outros <span class="ip-category-count">0</span>
+          </button>
+        </div>
+
+        <form id="ipForm" class="form-grid ip-form">
+          <input type="hidden" id="ipId" />
+          <label
+            >Categoria
+            <select id="ipCategoria" required>
+              <option>Relógio</option>
+              <option>Switch</option>
+              <option>Impressora</option>
+              <option>Access Point</option>
+              <option>Câmera</option>
+              <option>Servidor</option>
+              <option>Computador</option>
+              <option selected>Outro</option>
+            </select>
+          </label>
+          <label
+            >Nome / Equipamento
+            <input
+              id="ipNome"
+              required
+              placeholder="Ex: Impressora Expedição"
+            />
+          </label>
+          <label
+            >Endereço IP
+            <input
+              id="ipEndereco"
+              required
+              inputmode="decimal"
+              placeholder="Ex: 10.242.37.50"
+            />
+          </label>
+          <label
+            >Setor / Local
+            <input id="ipSetor" placeholder="Ex: Expedição" />
+          </label>
+          <label class="full"
+            >Observações
+            <textarea
+              id="ipObservacoes"
+              rows="2"
+              placeholder="Ex: HP E50145, VLAN 5, equipamento crítico..."
+            ></textarea>
+          </label>
+          <button type="submit" class="primary">Salvar IP</button>
+          <button
+  id="salvarIpBtn"
+  type="submit"
+  class="primary"
+>
+  Salvar IP
+</button>
+
+<button
+  id="cancelarEdicaoIp"
+  type="button"
+  class="secondary ip-cancel-button app-hidden"
+>
+  Cancelar edição
+</button>
+        </form>
+
+        <div class="ip-toolbar">
+          <label
+            >Pesquisar IP ou equipamento
+            <input
+              id="ipBusca"
+              type="search"
+              placeholder="Categoria, nome, IP, setor ou observação..."
+              autocomplete="off"
+            />
+          </label>
+          <button id="verificarTodosIps" class="primary" type="button">
+            Verificar todos
+          </button>
+        </div>
+
+        <div id="ipsList" class="cards-list ip-list"></div>
+      </section>
+
+      <section id="administracao" class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Administração</h2>
+            <p>
+              Crie contas técnicas e redefina senhas sem compartilhar a senha do
+              administrador.
+            </p>
+          </div>
+        </div>
+        <form id="adminCreateUserForm" class="form-grid">
+          <label
+            >Nome completo
+            <input id="adminCreateNome" required maxlength="100" />
+          </label>
+          <label
+            >Usuário
+            <input
+              id="adminCreateUsuario"
+              required
+              minlength="3"
+              maxlength="50"
+            />
+          </label>
+          <label
+            >Senha temporária
+            <input
+              id="adminCreateSenha"
+              type="password"
+              required
+              minlength="8"
+              maxlength="128"
+            />
+          </label>
+          <button type="submit" class="primary">Criar usuário técnico</button>
+        </form>
+        <form id="adminResetPasswordForm" class="form-grid">
+          <label
+            >Usuário
+            <input id="adminResetUsuario" required maxlength="50" />
+          </label>
+          <label
+            >Nova senha
+            <input
+              id="adminResetSenha"
+              type="password"
+              required
+              minlength="8"
+              maxlength="128"
+            />
+          </label>
+          <button type="submit" class="primary">Redefinir senha</button>
+        </form>
+      </section>
+    </main>
+
+    <template id="emptyTemplate">
+      <div class="empty-state">
+        <strong>Nenhum registro encontrado</strong>
+        <span>Cadastre um item acima para começar.</span>
+      </div>
+    </template>
+
+    <div id="toast" class="toast"></div>
+    <div
+      id="sleepScreen"
+      class="sleep-screen app-hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sleepScreenTitle"
+      aria-describedby="sleepScreenHelp"
+      aria-hidden="true"
+    >
+      <div class="sleep-bg" aria-hidden="true"></div>
+      <div class="sleep-particles" aria-hidden="true"></div>
+
+      <div class="sleep-content">
+        <span class="sleep-label">Modo descanso</span>
+        <h1 class="sleep-title" id="sleepScreenTitle">Rotina TI</h1>
+
+        <div class="sleep-clock" id="sleepClock">00:00:00</div>
+        <div class="sleep-weekday" id="sleepWeekday">quinta-feira</div>
+        <div class="sleep-date" id="sleepDate">23 de julho de 2026</div>
+
+        <div class="sleep-info">
+          <span>Sistema operacional ativo</span>
+          <span id="sleepUser">Usuário conectado</span>
+        </div>
+
+        <button id="closeSleepScreen" class="sleep-close" type="button">
+          Voltar ao painel
+        </button>
+        <div class="sleep-tip" id="sleepScreenHelp">
+          Pressione <strong>ESC</strong> ou use o botão para voltar ao painel.
         </div>
       </div>
-
-      <form id="pendenciaForm" class="form-grid pendencia-form">
-        <input type="hidden" id="pendenciaId" />
-        <label>Descrição
-          <input id="pendenciaDescricao" required placeholder="Ex: Configurar Outlook da logística" />
-        </label>
-        <label>Setor
-          <input id="pendenciaSetor" placeholder="Ex: Logística" />
-        </label>
-        <label>Data
-          <input id="pendenciaData" type="date" />
-        </label>
-        <label>Hora
-          <input id="pendenciaHora" type="time" />
-        </label>
-        <label>Prioridade
-          <select id="pendenciaPrioridade">
-            <option>Baixa</option>
-            <option selected>Média</option>
-            <option>Alta</option>
-            <option>Urgente</option>
-          </select>
-        </label>
-        <label>Status
-          <select id="pendenciaStatus">
-            <option selected>Aberta</option>
-            <option>Em andamento</option>
-            <option>Concluída</option>
-          </select>
-        </label>
-        <button type="submit" class="primary">Salvar pendência</button>
-      </form>
-
-      <div id="pendenciasList" class="cards-list"></div>
-    </section>
-
-    <section id="manutencao" class="panel">
-      <div class="panel-header">
-        <div>
-          <h2>Equipamento em Manutenção</h2>
-          <p>Essa lista é compartilhada com todos. Cada ação mostra quem fez.</p>
-        </div>
-      </div>
-
-      <form id="manutencaoForm" class="form-grid manutencao-form">
-        <input type="hidden" id="manutencaoId" />
-        <label>Tipo
-          <select id="manutencaoTipo">
-            <option>CPU</option>
-            <option>Notebook</option>
-            <option>Monitor</option>
-            <option>Impressora</option>
-            <option>Celular</option>
-            <option>Periférico</option>
-            <option>Outro</option>
-          </select>
-        </label>
-        <label>Patrimônio
-          <input id="manutencaoPatrimonio" placeholder="Nº patrimônio" />
-        </label>
-        <label>Marca / Modelo
-          <input id="manutencaoModelo" placeholder="Ex: Dell Optiplex 7020" />
-        </label>
-        <label>Serial
-          <input id="manutencaoSerial" placeholder="Número de série" />
-        </label>
-        <label>Setor / Usuário
-          <input id="manutencaoResponsavel" placeholder="Ex: RH - Ana" />
-        </label>
-        <label>Enviado para
-          <input id="manutencaoDestino" placeholder="Ex: Garantia / Assistência / Matriz" />
-        </label>
-        <label>Data de envio
-          <input id="manutencaoData" type="date" />
-        </label>
-        <label>Status
-          <select id="manutencaoStatus">
-            <option selected>Enviado</option>
-            <option>Aguardando orçamento</option>
-            <option>Em análise</option>
-            <option>Consertado</option>
-            <option>Retornou</option>
-          </select>
-        </label>
-        <label class="pdf-field">Anexar PDF opcional
-          <input id="manutencaoPdf" type="file" accept="application/pdf" />
-        </label>
-        <label class="full">Defeito / Observações
-          <textarea id="manutencaoObs" rows="3" placeholder="Ex: Não liga, fonte queimada, tela quebrada..."></textarea>
-        </label>
-
-        <button type="submit" class="primary">Salvar manutenção</button>
-      </form>
-
-      <div id="manutencoesList" class="cards-list"></div>
-    </section>
-  </main>
-
-  <template id="emptyTemplate">
-    <div class="empty-state">
-      <strong>Nenhum registro encontrado</strong>
-      <span>Cadastre um item acima para começar.</span>
     </div>
-  </template>
 
-  <div id="toast" class="toast"></div>
-  <script src="script.js"></script>
-</body>
+    <script src="sleep-screen.js"></script>
+    <script src="dashboard-model.js"></script>
+    <script src="script.js"></script>
+  </body>
 </html>

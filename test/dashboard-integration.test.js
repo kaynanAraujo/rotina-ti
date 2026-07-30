@@ -1,0 +1,603 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const projectRoot = path.resolve(__dirname, "..");
+const tempBase = path.resolve(os.tmpdir());
+const tempDir = fs.mkdtempSync(
+  path.join(tempBase, "rotina-ti-dashboard-integration-"),
+);
+const tempDbPath = path.join(tempDir, "dashboard-integration.db");
+const tempUploadDir = path.join(tempDir, "uploads", "manutencoes");
+const realDbPath = path.join(projectRoot, "database.db");
+
+assert.ok(
+  tempDir.startsWith(`${tempBase}${path.sep}`),
+  "A raiz do teste precisa permanecer no diretório temporário do sistema.",
+);
+assert.ok(
+  !tempDir.startsWith(`${projectRoot}${path.sep}`),
+  "A raiz do teste não pode ficar dentro do projeto real.",
+);
+assert.notEqual(path.resolve(tempDbPath), path.resolve(realDbPath));
+
+function fileFingerprint(filePath) {
+  const stat = fs.statSync(filePath);
+  return {
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    sha256: crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(filePath))
+      .digest("hex"),
+  };
+}
+
+assert.equal(
+  fs.existsSync(realDbPath),
+  true,
+  "O banco real precisa existir para que o teste confirme que ele não foi tocado.",
+);
+const realDbBefore = fileFingerprint(realDbPath);
+
+process.env.DB_PATH = tempDbPath;
+process.env.UPLOAD_DIR = tempUploadDir;
+process.env.SESSION_SECRET =
+  "dashboard-integration-test-secret-with-more-than-32-characters";
+process.env.NODE_ENV = "development";
+process.env.TZ = "America/Sao_Paulo";
+delete process.env.SESSION_COOKIE_SECURE;
+
+const DashboardModel = require("../public/dashboard-model");
+const { startServer, uploadDir } = require("../server");
+const { db, dbPath, run, get, all } = require("../database");
+
+assert.equal(path.resolve(dbPath), path.resolve(tempDbPath));
+assert.equal(path.resolve(uploadDir), path.resolve(tempUploadDir));
+
+const referenceDate = new Date();
+referenceDate.setMilliseconds(0);
+const REFERENCE_NOW = referenceDate.toISOString();
+const REFERENCE_NOW_MS = referenceDate.getTime();
+const TODAY = REFERENCE_NOW.slice(0, 10);
+const ADMIN_PENDING_MARKER = "PENDENCIA-PRIVADA-DO-ADMIN-NAO-VAZAR";
+
+let server;
+let baseUrl;
+
+function shiftDateKey(dateKey, days) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
+}
+
+function sqlTimestamp(milliseconds) {
+  return new Date(milliseconds).toISOString().slice(0, 19).replace("T", " ");
+}
+
+function cookieFrom(response) {
+  const header = response.headers.get("set-cookie");
+  assert.ok(header, "A resposta deveria criar um cookie de sessão.");
+  return header.split(";", 1)[0];
+}
+
+async function request(url, options = {}, cookie = null) {
+  const headers = { ...(options.headers || {}) };
+  if (cookie) headers.Cookie = cookie;
+  if (options.body != null) headers["Content-Type"] = "application/json";
+  return fetch(`${baseUrl}${url}`, { ...options, headers });
+}
+
+async function jsonRequest(url, method, body, cookie = null) {
+  return request(
+    url,
+    {
+      method,
+      body: body == null ? undefined : JSON.stringify(body),
+    },
+    cookie,
+  );
+}
+
+async function responseJson(response, expectedStatus = 200) {
+  const payload = await response.json().catch(() => ({}));
+  assert.equal(
+    response.status,
+    expectedStatus,
+    `HTTP ${response.status}: ${payload.error || JSON.stringify(payload)}`,
+  );
+  return payload;
+}
+
+async function registerFirstAdmin() {
+  const response = await jsonRequest("/api/auth/register", "POST", {
+    nome: "Admin Dashboard",
+    usuario: "admin-dashboard",
+    senha: "senha-admin-dashboard-123",
+  });
+  const payload = await responseJson(response);
+  return {
+    cookie: cookieFrom(response),
+    user: payload.user,
+  };
+}
+
+async function createAndLoginUser(adminCookie, account) {
+  const created = await responseJson(
+    await jsonRequest(
+      "/api/auth/register",
+      "POST",
+      {
+        nome: account.nome,
+        usuario: account.usuario,
+        senha: account.senha,
+      },
+      adminCookie,
+    ),
+  );
+
+  const loginResponse = await jsonRequest("/api/auth/login", "POST", {
+    usuario: account.usuario,
+    senha: account.senha,
+  });
+  const login = await responseJson(loginResponse);
+  assert.equal(login.user.id, created.id);
+
+  return {
+    cookie: cookieFrom(loginResponse),
+    user: login.user,
+  };
+}
+
+async function createPending(cookie, overrides) {
+  return responseJson(
+    await jsonRequest(
+      "/api/pendencias",
+      "POST",
+      {
+        descricao: "Pendência de integração",
+        setor: "TI",
+        data: TODAY,
+        hora: "09:00",
+        prioridade: "Média",
+        status: "Aberta",
+        repeticao: "Nenhuma",
+        ...overrides,
+      },
+      cookie,
+    ),
+  );
+}
+
+async function completePending(cookie, id) {
+  return responseJson(
+    await jsonRequest(`/api/pendencias/${id}/concluir`, "POST", {}, cookie),
+  );
+}
+
+async function createMaintenance(cookie, overrides) {
+  return responseJson(
+    await jsonRequest(
+      "/api/manutencoes",
+      "POST",
+      {
+        tipo: "Notebook",
+        patrimonio: "PAT-DASHBOARD",
+        modelo: "Modelo integração",
+        serial: "",
+        responsavel: "Equipe TI",
+        destino: "Assistência",
+        dataEnvio: shiftDateKey(TODAY, -10),
+        status: "Enviado",
+        obs: "Registro criado apenas no banco temporário.",
+        ...overrides,
+      },
+      cookie,
+    ),
+  );
+}
+
+async function loadDashboardInput(account) {
+  const [
+    pendencias,
+    historicoTarefas,
+    manutencoes,
+    historicoManutencoes,
+    ipsMonitorados,
+  ] = await Promise.all([
+    responseJson(await request("/api/pendencias", {}, account.cookie)),
+    responseJson(
+      await request("/api/pendencias-historico", {}, account.cookie),
+    ),
+    responseJson(await request("/api/manutencoes", {}, account.cookie)),
+    responseJson(
+      await request("/api/manutencoes-historico", {}, account.cookie),
+    ),
+    responseJson(await request("/api/ips", {}, account.cookie)),
+  ]);
+
+  return {
+    currentUser: account.user,
+    pendencias,
+    historicoTarefas,
+    manutencoes,
+    historicoManutencoes,
+    ipsMonitorados,
+  };
+}
+
+function sharedCounts(model) {
+  return {
+    manutencoesAtivas: model.contagens.manutencoesAtivas,
+    manutencoesAguardandoRetorno:
+      model.contagens.manutencoesAguardandoRetorno,
+    ipsMonitorados: model.contagens.ipsMonitorados,
+    ipsOffline: model.contagens.ipsOffline,
+  };
+}
+
+test.before(async () => {
+  server = await startServer(0, "127.0.0.1");
+  baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  assert.equal(fs.existsSync(tempDbPath), true);
+  assert.equal(fs.existsSync(tempUploadDir), true);
+  assert.equal(path.resolve(process.env.DB_PATH), path.resolve(tempDbPath));
+});
+
+test.after(async () => {
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  await new Promise((resolve, reject) => {
+    db.close((error) => (error ? reject(error) : resolve()));
+  });
+
+  const realDbAfter = fileFingerprint(realDbPath);
+  const resolvedTempDir = path.resolve(tempDir);
+  assert.ok(resolvedTempDir.startsWith(`${tempBase}${path.sep}`));
+  assert.ok(!resolvedTempDir.startsWith(`${projectRoot}${path.sep}`));
+  fs.rmSync(resolvedTempDir, { recursive: true, force: true });
+
+  assert.deepEqual(
+    realDbAfter,
+    realDbBefore,
+    "O conteúdo, tamanho ou horário do database.db real foi alterado.",
+  );
+});
+
+test("integra APIs reais ao Dashboard sem misturar pendências pessoais", async () => {
+  const admin = await registerFirstAdmin();
+  const technician = await createAndLoginUser(admin.cookie, {
+    nome: "Técnica Dashboard",
+    usuario: "tecnica-dashboard",
+    senha: "senha-tecnica-dashboard-123",
+  });
+  const emptyUser = await createAndLoginUser(admin.cookie, {
+    nome: "Usuário Sem Pendências",
+    usuario: "usuario-vazio-dashboard",
+    senha: "senha-vazio-dashboard-123",
+  });
+
+  await createPending(admin.cookie, {
+    descricao: ADMIN_PENDING_MARKER,
+    data: TODAY,
+    hora: "07:00",
+    prioridade: "Urgente",
+  });
+
+  await createPending(technician.cookie, {
+    descricao: "Pendência atrasada do técnico",
+    data: shiftDateKey(TODAY, -1),
+    hora: "08:00",
+    prioridade: "Urgente",
+  });
+  await createPending(technician.cookie, {
+    descricao: "Pendência de hoje do técnico",
+    data: TODAY,
+    hora: "10:00",
+    prioridade: "Alta",
+    status: "Em andamento",
+  });
+  await createPending(technician.cookie, {
+    descricao: "Pendência futura do técnico",
+    data: shiftDateKey(TODAY, 1),
+    hora: "11:00",
+    prioridade: "Média",
+  });
+  await createPending(technician.cookie, {
+    descricao: "Pendência sem data do técnico",
+    data: "",
+    hora: "",
+    prioridade: "Baixa",
+  });
+
+  const completedAtBoundary = await createPending(technician.cookie, {
+    descricao: "Concluída exatamente no limite de sete dias",
+    data: shiftDateKey(TODAY, -7),
+  });
+  const completedRecently = await createPending(technician.cookie, {
+    descricao: "Concluída dentro dos últimos sete dias",
+    data: shiftDateKey(TODAY, -1),
+  });
+  const completedOutsideWindow = await createPending(technician.cookie, {
+    descricao: "Concluída um segundo fora da janela",
+    data: shiftDateKey(TODAY, -8),
+  });
+
+  await completePending(technician.cookie, completedAtBoundary.id);
+  await completePending(technician.cookie, completedRecently.id);
+  await completePending(technician.cookie, completedOutsideWindow.id);
+
+  const sevenDaysAgo = REFERENCE_NOW_MS - 7 * DashboardModel.DAY_MS;
+  await run(
+    `UPDATE pendencias
+     SET concluido_em = ?, atualizado_em = ?
+     WHERE id = ? AND usuario_id = ?`,
+    [
+      sqlTimestamp(sevenDaysAgo),
+      sqlTimestamp(sevenDaysAgo),
+      completedAtBoundary.id,
+      technician.user.id,
+    ],
+  );
+  await run(
+    `UPDATE pendencias
+     SET concluido_em = ?, atualizado_em = ?
+     WHERE id = ? AND usuario_id = ?`,
+    [
+      sqlTimestamp(REFERENCE_NOW_MS - DashboardModel.DAY_MS),
+      sqlTimestamp(REFERENCE_NOW_MS - DashboardModel.DAY_MS),
+      completedRecently.id,
+      technician.user.id,
+    ],
+  );
+  await run(
+    `UPDATE pendencias
+     SET concluido_em = ?, atualizado_em = ?
+     WHERE id = ? AND usuario_id = ?`,
+    [
+      sqlTimestamp(sevenDaysAgo - 1000),
+      sqlTimestamp(sevenDaysAgo - 1000),
+      completedOutsideWindow.id,
+      technician.user.id,
+    ],
+  );
+
+  await createMaintenance(admin.cookie, {
+    patrimonio: "PAT-ATIVA-001",
+    modelo: "Ativa antiga",
+    dataEnvio: shiftDateKey(TODAY, -30),
+    status: "Enviado",
+  });
+  await createMaintenance(technician.cookie, {
+    patrimonio: "PAT-RETORNO-002",
+    modelo: "Aguardando retorno",
+    dataEnvio: shiftDateKey(TODAY, -20),
+    status: "Aguardando retorno do equipamento",
+  });
+  await createMaintenance(technician.cookie, {
+    patrimonio: "PAT-ANALISE-003",
+    modelo: "Em análise",
+    dataEnvio: shiftDateKey(TODAY, -10),
+    status: "Em análise",
+  });
+  const returnedMaintenance = await createMaintenance(admin.cookie, {
+    patrimonio: "PAT-RETORNADA-004",
+    modelo: "Já retornada",
+    dataEnvio: shiftDateKey(TODAY, -40),
+    status: "Enviado",
+  });
+  await responseJson(
+    await jsonRequest(
+      `/api/manutencoes/${returnedMaintenance.id}/retornar`,
+      "POST",
+      {},
+      technician.cookie,
+    ),
+  );
+
+  for (const monitoredIp of [
+    {
+      categoria: "Servidor",
+      nome: "Servidor online",
+      ip: "192.0.2.10",
+      setor: "Datacenter",
+      status: "Online",
+      tempoMs: 2,
+      verificadoEm: sqlTimestamp(REFERENCE_NOW_MS - 60_000),
+    },
+    {
+      categoria: "Switch",
+      nome: "Switch offline",
+      ip: "192.0.2.11",
+      setor: "Infraestrutura",
+      status: "Offline",
+      tempoMs: null,
+      verificadoEm: sqlTimestamp(REFERENCE_NOW_MS - 120_000),
+    },
+    {
+      categoria: "Impressora",
+      nome: "Impressora offline",
+      ip: "192.0.2.12",
+      setor: "Financeiro",
+      status: "Offline",
+      tempoMs: null,
+      verificadoEm: sqlTimestamp(REFERENCE_NOW_MS - 180_000),
+    },
+    {
+      categoria: "Câmera",
+      nome: "Câmera ainda não verificada",
+      ip: "192.0.2.13",
+      setor: "Portaria",
+      status: "Não verificado",
+      tempoMs: null,
+      verificadoEm: null,
+    },
+  ]) {
+    await run(
+      `INSERT INTO ips_monitorados (
+         categoria, nome, ip, setor, observacoes, status, tempo_ms,
+         verificado_em, criado_por_id, criado_por_nome
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        monitoredIp.categoria,
+        monitoredIp.nome,
+        monitoredIp.ip,
+        monitoredIp.setor,
+        "Fixture do Dashboard no banco temporário.",
+        monitoredIp.status,
+        monitoredIp.tempoMs,
+        monitoredIp.verificadoEm,
+        technician.user.id,
+        technician.user.nome,
+      ],
+    );
+  }
+
+  const technicianInput = await loadDashboardInput(technician);
+  const adminInput = await loadDashboardInput(admin);
+  const emptyUserInput = await loadDashboardInput(emptyUser);
+
+  const technicianModel = DashboardModel.buildDashboardModel(technicianInput, {
+    now: REFERENCE_NOW,
+  });
+  const adminModel = DashboardModel.buildDashboardModel(adminInput, {
+    now: REFERENCE_NOW,
+  });
+  const emptyUserModel = DashboardModel.buildDashboardModel(emptyUserInput, {
+    now: REFERENCE_NOW,
+  });
+
+  assert.deepEqual(technicianModel.contagens, {
+    pendenciasAbertas: 4,
+    pendenciasAtrasadas: 1,
+    pendenciasHoje: 1,
+    pendenciasConcluidasUltimos7Dias: 2,
+    manutencoesAtivas: 3,
+    manutencoesAguardandoRetorno: 1,
+    ipsMonitorados: 4,
+    ipsOffline: 2,
+  });
+  assert.equal(technicianInput.historicoTarefas.length, 3);
+  assert.equal(
+    technicianInput.pendencias.some(
+      (item) => item.descricao === ADMIN_PENDING_MARKER,
+    ),
+    false,
+  );
+  assert.equal(
+    technicianModel.proximasPendencias.some(
+      (item) => item.descricao === ADMIN_PENDING_MARKER,
+    ),
+    false,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(technicianModel),
+    new RegExp(ADMIN_PENDING_MARKER),
+  );
+  assert.deepEqual(
+    technicianModel.distribuicoes.pendenciasPorPrioridade.map(
+      (item) => item.total,
+    ),
+    [1, 1, 1, 1],
+  );
+
+  assert.equal(adminModel.contagens.pendenciasAbertas, 1);
+  assert.equal(
+    adminModel.proximasPendencias.some(
+      (item) => item.descricao === ADMIN_PENDING_MARKER,
+    ),
+    true,
+  );
+
+  assert.deepEqual(adminInput.manutencoes, technicianInput.manutencoes);
+  assert.deepEqual(
+    adminInput.historicoManutencoes,
+    technicianInput.historicoManutencoes,
+  );
+  assert.deepEqual(adminInput.ipsMonitorados, technicianInput.ipsMonitorados);
+  assert.deepEqual(sharedCounts(adminModel), sharedCounts(technicianModel));
+  assert.deepEqual(sharedCounts(technicianModel), {
+    manutencoesAtivas: 3,
+    manutencoesAguardandoRetorno: 1,
+    ipsMonitorados: 4,
+    ipsOffline: 2,
+  });
+
+  assert.deepEqual(emptyUserInput.pendencias, []);
+  assert.deepEqual(emptyUserInput.historicoTarefas, []);
+  assert.deepEqual(
+    {
+      pendenciasAbertas: emptyUserModel.contagens.pendenciasAbertas,
+      pendenciasAtrasadas: emptyUserModel.contagens.pendenciasAtrasadas,
+      pendenciasHoje: emptyUserModel.contagens.pendenciasHoje,
+      pendenciasConcluidasUltimos7Dias:
+        emptyUserModel.contagens.pendenciasConcluidasUltimos7Dias,
+    },
+    {
+      pendenciasAbertas: 0,
+      pendenciasAtrasadas: 0,
+      pendenciasHoje: 0,
+      pendenciasConcluidasUltimos7Dias: 0,
+    },
+  );
+  assert.deepEqual(emptyUserModel.proximasPendencias, []);
+  assert.deepEqual(
+    emptyUserModel.distribuicoes.pendenciasPorPrioridade.map(
+      (item) => item.total,
+    ),
+    [0, 0, 0, 0],
+  );
+  assert.deepEqual(
+    emptyUserInput.manutencoes,
+    technicianInput.manutencoes,
+  );
+  assert.deepEqual(
+    emptyUserInput.historicoManutencoes,
+    technicianInput.historicoManutencoes,
+  );
+  assert.deepEqual(
+    emptyUserInput.ipsMonitorados,
+    technicianInput.ipsMonitorados,
+  );
+  assert.deepEqual(sharedCounts(emptyUserModel), sharedCounts(technicianModel));
+  assert.doesNotMatch(
+    JSON.stringify(emptyUserModel),
+    new RegExp(ADMIN_PENDING_MARKER),
+  );
+
+  const completedRows = await all(
+    `SELECT id, concluido_em
+     FROM pendencias
+     WHERE id IN (?, ?, ?)
+     ORDER BY id`,
+    [
+      completedAtBoundary.id,
+      completedRecently.id,
+      completedOutsideWindow.id,
+    ],
+  );
+  assert.equal(completedRows.length, 3);
+  assert.ok(
+    completedRows.some(
+      (row) => row.concluido_em === sqlTimestamp(sevenDaysAgo),
+    ),
+  );
+  assert.ok(
+    completedRows.some(
+      (row) => row.concluido_em === sqlTimestamp(sevenDaysAgo - 1000),
+    ),
+  );
+
+  const integrity = await get("PRAGMA integrity_check");
+  assert.equal(integrity.integrity_check, "ok");
+  assert.deepEqual(
+    fileFingerprint(realDbPath),
+    realDbBefore,
+    "O database.db real mudou durante o teste de integração.",
+  );
+});
