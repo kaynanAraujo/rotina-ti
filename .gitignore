@@ -11,6 +11,7 @@ importar-ips.js
 importar-ips.bat
 
 # Configurações e segredos
+session-secret.txt
 .env
 .env.*
 !.env.example

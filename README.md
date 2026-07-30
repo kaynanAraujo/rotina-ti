@@ -72,6 +72,12 @@ Inicie pelo arquivo:
 abrir-rotina-ti.bat
 ```
 
+O inicializador valida o Node.js, o npm e o `package.json`. Se
+`node_modules/` ainda não existir, ele instala as dependências. Antes de criar
+uma instância, o BAT consulta o endpoint de saúde, detecta conflitos na porta
+3000 e aguarda a aplicação responder por até 15 segundos. Ao final, abre o
+Google Chrome quando disponível ou usa o navegador padrão.
+
 Também é possível iniciar manualmente:
 
 ```powershell
@@ -88,8 +94,13 @@ Para acesso por outros computadores, utilize o hostname ou o endereço IPv4 do s
 
 ```text
 http://NOME-DO-SERVIDOR:3000
-http://IP-DO-SERVIDOR:3000
+http://NOME-DO-SERVIDOR.empresa.local:3000
+http://192.168.1.50:3000
 ```
+
+O domínio DNS depende da configuração de cada ambiente. O arquivo
+`abrir-rotina-ti.bat` usa `%COMPUTERNAME%` para exibir automaticamente o
+endereço baseado no hostname atual do Windows.
 
 ## Estrutura do projeto
 

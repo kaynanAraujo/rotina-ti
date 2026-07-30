@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { run, get, all, transaction, initDB } = require('./database');
@@ -1208,9 +1209,9 @@ async function startServer(port = PORT, host = '0.0.0.0') {
   console.log('        Rotina TI iniciado com sucesso');
   console.log('==========================================');
   const actualPort = server.address().port;
+  const hostname = os.hostname();
   console.log(`http://localhost:${actualPort}`);
-  console.log(`http://ANDDSKTI01:${actualPort}`);
-  console.log(`http://ANDDSKTI01.corporate.ad:${actualPort}`);
+  console.log(`http://${hostname}:${actualPort}`);
   console.log('');
   return server;
 }

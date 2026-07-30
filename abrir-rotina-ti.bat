@@ -5,8 +5,7 @@ cd /d "%~dp0"
 
 set "PORT=3000"
 set "URL_LOCAL=http://localhost:3000"
-set "URL_REDE=http://ANDDSKTI01:3000"
-set "URL_DOMINIO=http://ANDDSKTI01.corporate.ad:3000"
+set "URL_REDE=http://%COMPUTERNAME%:3000"
 set "URL_HEALTH=http://127.0.0.1:3000/api/health"
 
 if /i "%~1"=="--server" goto RUN_SERVER
@@ -17,7 +16,6 @@ echo ==========================================
 echo.
 echo %URL_LOCAL%
 echo %URL_REDE%
-echo %URL_DOMINIO%
 echo.
 
 if not exist "package.json" (
@@ -159,7 +157,6 @@ echo ==========================================
 echo.
 echo %URL_LOCAL%
 echo %URL_REDE%
-echo %URL_DOMINIO%
 echo.
 call npm.cmd start
 exit /b %errorlevel%
