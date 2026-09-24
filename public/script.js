@@ -10,13 +10,22 @@ let historicoTarefas = [];
 let manutencoes = [];
 let historicoManutencoes = [];
 let ipsMonitorados = [];
+let monitoramentosIpAtivos = [];
+let monitoramentosIpTimer = null;
+let monitoramentoIpModalItem = null;
+let monitoramentosTemporarios = [];
+let historicoMonitoramentosTemporarios = [];
+let resumoMonitoramentosTemporarios = { ativos: 0, quedas: 0, falhasPing: 0, disponibilidade: 100 };
+let monitoramentosTemporariosTimer = null;
 let editingPendenciaId = null;
 let editingManutencaoId = null;
 let editingIpId = null;
 let ipCategoriaAtiva = "Todos";
-let sleepController = null;
 let dashboardSnapshot = null;
 let dashboardLastUpdatedAt = null;
+let dashboardRenderKey = "";
+let ipsRenderKey = "";
+let monitoramentosTemporariosRenderKey = "";
 let loadAllPromise = null;
 const pendingActions = new Set();
 const busyForms = new WeakSet();
@@ -29,24 +38,20 @@ const norm = (text) =>
     .replace(/[\u0300-\u036f]/g, "");
 
 async function api(url, options = {}) {
-  const { trackBusy = true, ...requestOptions } = options;
-  if (trackBusy) sleepController?.beginBusy();
-  try {
-    const response = await fetch(url, {
-      credentials: "same-origin",
-      headers:
-        requestOptions.body instanceof FormData
-          ? undefined
-          : { "Content-Type": "application/json" },
-      ...requestOptions,
-    });
+  const requestOptions = { ...options };
+  delete requestOptions.trackBusy;
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    headers:
+      requestOptions.body instanceof FormData
+        ? undefined
+        : { "Content-Type": "application/json" },
+    ...requestOptions,
+  });
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Erro na requisição.");
-    return data;
-  } finally {
-    if (trackBusy) sleepController?.endBusy();
-  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Erro na requisição.");
+  return data;
 }
 
 function showToast(message, duration = 2200) {
@@ -64,14 +69,12 @@ async function runPendingAction(key, action) {
     return null;
   }
   pendingActions.add(key);
-  sleepController?.beginBusy();
   try {
     return await action();
   } catch (error) {
     showToast(error.message || "Não foi possível concluir a ação.", 4200);
     return null;
   } finally {
-    sleepController?.endBusy();
     pendingActions.delete(key);
   }
 }
@@ -80,10 +83,8 @@ function setFormBusy(form, busy) {
   if (!form) return;
   if (busy && !busyForms.has(form)) {
     busyForms.add(form);
-    sleepController?.beginBusy();
   } else if (!busy && busyForms.has(form)) {
     busyForms.delete(form);
-    sleepController?.endBusy();
   }
   form.setAttribute("aria-busy", String(busy));
   form.querySelectorAll('button[type="submit"]').forEach((button) => {
@@ -248,23 +249,6 @@ function activatePanel(
   return true;
 }
 
-function setupSleepController() {
-  if (sleepController || typeof window.SleepScreenController !== "function") {
-    return;
-  }
-
-  sleepController = new window.SleepScreenController({
-    timeoutMs: 300000,
-    isAuthenticated: () =>
-      Boolean(currentUser) &&
-      !$("appContent")?.classList.contains("app-hidden"),
-    getUserLabel: () =>
-      currentUser?.nome || $("userInfo")?.textContent || "Usuário conectado",
-    onBlocked: () => showToast("Aguarde a conclusão da ação em andamento."),
-  });
-  sleepController.init();
-}
-
 async function checkAuth() {
   const data = await api("/api/auth/me");
   if (data.user) {
@@ -272,6 +256,8 @@ async function checkAuth() {
     showApp();
     await loadAll();
     iniciarAutoVerificacaoIps();
+    iniciarAtualizacaoMonitoramentosIp();
+    iniciarAtualizacaoMonitoramentosTemporarios();
   } else {
     $("showRegister").classList.toggle("app-hidden", !data.setupRequired);
     if (!data.setupRequired) switchAuth("login");
@@ -286,11 +272,9 @@ function showApp() {
   $("adminTab")?.classList.toggle("app-hidden", currentUser.perfil !== "admin");
   activatePanel("dashboard");
   renderDashboardHeader();
-  sleepController?.activate();
 }
 
 function showAuth() {
-  sleepController?.deactivate();
   $("authScreen").classList.remove("app-hidden");
   $("appContent").classList.add("app-hidden");
 }
@@ -313,6 +297,8 @@ function setupForms() {
       showApp();
       await loadAll();
       iniciarAutoVerificacaoIps();
+      iniciarAtualizacaoMonitoramentosIp();
+      iniciarAtualizacaoMonitoramentosTemporarios();
     } catch (error) {
       $("authMessage").textContent = error.message;
       $("loginSenha").value = "";
@@ -345,6 +331,8 @@ function setupForms() {
       showApp();
       await loadAll();
       iniciarAutoVerificacaoIps();
+      iniciarAtualizacaoMonitoramentosIp();
+      iniciarAtualizacaoMonitoramentosTemporarios();
     } catch (error) {
       $("authMessage").textContent = error.message;
     } finally {
@@ -396,6 +384,8 @@ function setupForms() {
         body: JSON.stringify({}),
       });
       pararAutoVerificacaoIps();
+      pararAtualizacaoMonitoramentosIp();
+      pararAtualizacaoMonitoramentosTemporarios();
       location.reload();
     } catch (error) {
       showToast(error.message || "Não foi possível sair.", 4200);
@@ -411,6 +401,16 @@ function setupForms() {
     verificarTodosIps(),
   );
   $("cancelarEdicaoIp").addEventListener("click", resetIpForm);
+  $("monitoramentoIpModalClose")?.addEventListener("click", fecharMonitoramentoIpModal);
+  $("monitoramentoIpModalCancel")?.addEventListener("click", fecharMonitoramentoIpModal);
+  $("monitoramentoIpForm")?.addEventListener("submit", iniciarMonitoramentoIp);
+  $("monitoramentoIpDetalhesClose")?.addEventListener("click", fecharMonitoramentoIpDetalhes);
+  $("abrirMonitoramentoTemporario")?.addEventListener("click", abrirMonitoramentoTemporarioModal);
+  $("monitoramentoTemporarioModalClose")?.addEventListener("click", fecharMonitoramentoTemporarioModal);
+  $("monitoramentoTemporarioModalCancel")?.addEventListener("click", fecharMonitoramentoTemporarioModal);
+  $("monitoramentoTemporarioForm")?.addEventListener("submit", iniciarMonitoramentoTemporario);
+  $("monitoramentoTemporarioDetalhesClose")?.addEventListener("click", fecharMonitoramentoTemporarioDetalhes);
+  $("limparHistoricoMonitoramentosTemporarios")?.addEventListener("click", limparHistoricoMonitoramentosTemporarios);
 
   $("adminCreateUserForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -510,6 +510,8 @@ async function loadAll() {
         loadManutencoes(),
         loadHistoricoManutencoes(),
         loadIps(),
+        loadMonitoramentosIpAtivos(),
+        loadMonitoramentosTemporarios(),
         loadStats(),
       ]);
       const failures = results.filter((result) => result.status === "rejected");
@@ -560,6 +562,25 @@ async function loadIps() {
   ipsMonitorados = await api("/api/ips");
   renderIps();
   if (!loadAllPromise) renderDashboard();
+}
+
+async function loadMonitoramentosIpAtivos() {
+  monitoramentosIpAtivos = await api("/api/monitoramentos/ativos", {
+    trackBusy: false,
+  });
+  renderMonitoramentosIpAtivos();
+}
+
+async function loadMonitoramentosTemporarios() {
+  const [ativos, historico, resumo] = await Promise.all([
+    api("/api/monitoramentos-temporarios", { trackBusy: false }),
+    api("/api/monitoramentos-temporarios/historico", { trackBusy: false }),
+    api("/api/monitoramentos-temporarios/resumo", { trackBusy: false }),
+  ]);
+  monitoramentosTemporarios = ativos;
+  historicoMonitoramentosTemporarios = historico;
+  resumoMonitoramentosTemporarios = resumo;
+  renderMonitoramentosTemporarios();
 }
 
 async function loadStats() {
@@ -959,6 +980,9 @@ function renderDashboard({ warning = "" } = {}) {
       historicoManutencoes,
       ipsMonitorados,
     });
+    const nextRenderKey = JSON.stringify(dashboardSnapshot);
+    if (nextRenderKey === dashboardRenderKey && !warning) return;
+    dashboardRenderKey = nextRenderKey;
 
     const counts = dashboardSnapshot.contagens || {};
     const countTargets = {
@@ -1396,6 +1420,27 @@ function renderIps() {
   const list = $("ipsList");
   if (!list) return;
 
+  const termo = norm($("ipBusca")?.value || "").trim();
+  const nextRenderKey = JSON.stringify({
+    categoria: ipCategoriaAtiva,
+    termo,
+    perfil: currentUser?.perfil,
+    itens: ipsMonitorados.map((item) => [
+      item.id,
+      item.categoria,
+      item.nome,
+      item.ip,
+      item.setor,
+      item.observacoes,
+      item.status,
+      item.tempoMs,
+      item.verificadoEm,
+      item.criadoPor,
+    ]),
+  });
+  if (nextRenderKey === ipsRenderKey) return;
+  ipsRenderKey = nextRenderKey;
+
   document.querySelectorAll(".ip-category-tab").forEach((tab) => {
     const categoria = tab.dataset.ipCategory || "Todos";
     const total =
@@ -1415,7 +1460,6 @@ function renderIps() {
           (item) => (item.categoria || "Outro") === ipCategoriaAtiva,
         );
 
-  const termo = norm($("ipBusca")?.value || "").trim();
   const filtrados = itensDaCategoria.filter((item) => {
     if (!termo) return true;
     return norm(
@@ -1492,6 +1536,7 @@ function renderIps() {
       ${
         itemId
           ? `<div class="actions ip-actions">
+        <button class="primary" type="button" onclick="abrirMonitoramentoIpModal(${itemId})">Monitorar</button>
         <button class="success" type="button" onclick="verificarIp(${itemId})">Verificar</button>
         <button class="secondary" type="button" onclick="editIp(${itemId})">Editar</button>
         ${currentUser?.perfil === "admin" ? `<button class="danger" type="button" onclick="deleteIp(${itemId})">Excluir</button>` : ""}
@@ -1501,6 +1546,376 @@ function renderIps() {
     `;
     list.appendChild(card);
   });
+}
+
+function formatDurationMs(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}min`;
+  if (minutes) return `${minutes}min ${String(seconds).padStart(2, "0")}s`;
+  return `${seconds}s`;
+}
+
+function formatPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toFixed(1)}%` : "-";
+}
+
+function renderMonitoramentosIpAtivos() {
+  const section = $("monitoramentosIpAtivos");
+  const list = $("monitoramentosIpAtivosList");
+  if (!section || !list) return;
+  section.classList.toggle("app-hidden", !monitoramentosIpAtivos.length);
+  if (!monitoramentosIpAtivos.length) {
+    list.innerHTML = "";
+    return;
+  }
+  list.innerHTML = monitoramentosIpAtivos
+    .map((item) => {
+      const itemId = safeRecordId(item.id);
+      const statusClass = item.statusAtual === "Online" ? "online" : item.statusAtual === "Offline" ? "offline" : "unknown";
+      return `
+        <article class="monitoramento-ip-row ${statusClass}">
+          <div class="monitoramento-ip-title">
+            <strong>${escapeHtml(item.nome || "-")}</strong>
+            <span>${escapeHtml(item.ip || "-")}</span>
+          </div>
+          <span>${badge(item.statusAtual || "Iniciando")}</span>
+          <span>${escapeHtml(formatDurationMs(item.tempoMonitoradoMs))}</span>
+          <span>${escapeHtml(safeCount(item.totalVerificacoes))}</span>
+          <span>${escapeHtml(safeCount(item.quedas))}</span>
+          <span>${escapeHtml(safeCount(item.falhasPing))}</span>
+          <span>${escapeHtml(formatDurationMs(item.tempoOfflineMs))}</span>
+          <span>${escapeHtml(formatDurationMs(item.maiorQuedaMs))}</span>
+          <span>${escapeHtml(formatPercent(item.disponibilidade))}</span>
+          <div class="actions monitoramento-ip-actions">
+            <button class="secondary" type="button" onclick="abrirMonitoramentoIpDetalhes(${itemId})">Ver detalhes</button>
+            <button class="danger" type="button" onclick="encerrarMonitoramentoIp(${itemId})">Encerrar</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function iniciarAtualizacaoMonitoramentosIp() {
+  clearTimeout(monitoramentosIpTimer);
+  const atualizar = async () => {
+    if (!currentUser) return;
+    try {
+      await loadMonitoramentosIpAtivos();
+    } catch (error) {
+      console.error("Falha ao atualizar monitoramentos de IP:", error);
+    } finally {
+      if (currentUser) {
+        monitoramentosIpTimer = setTimeout(atualizar, IP_AUTO_CHECK_INTERVAL_MS);
+      }
+    }
+  };
+  monitoramentosIpTimer = setTimeout(atualizar, IP_AUTO_CHECK_INTERVAL_MS);
+}
+
+function pararAtualizacaoMonitoramentosIp() {
+  clearTimeout(monitoramentosIpTimer);
+  monitoramentosIpTimer = null;
+}
+
+function abrirMonitoramentoIpModal(id) {
+  const itemId = safeRecordId(id);
+  const item = ipsMonitorados.find((ip) => safeRecordId(ip.id) === itemId);
+  if (!item) return;
+  monitoramentoIpModalItem = item;
+  $("monitoramentoIpNome").textContent = item.nome || "-";
+  $("monitoramentoIpEndereco").textContent = item.ip || "-";
+  $("monitoramentoIpDuracao").value = "15";
+  $("monitoramentoIpModal")?.classList.remove("app-hidden");
+}
+
+function fecharMonitoramentoIpModal() {
+  monitoramentoIpModalItem = null;
+  $("monitoramentoIpModal")?.classList.add("app-hidden");
+}
+
+async function iniciarMonitoramentoIp(event) {
+  event.preventDefault();
+  const itemId = safeRecordId(monitoramentoIpModalItem?.id);
+  if (!itemId) return;
+  const form = event.currentTarget;
+  const value = $("monitoramentoIpDuracao").value;
+  setFormBusy(form, true);
+  try {
+    await api(`/api/ips/${itemId}/monitorar`, {
+      method: "POST",
+      body: JSON.stringify({
+        duracaoMinutos: value === "" ? null : Number(value),
+      }),
+    });
+    fecharMonitoramentoIpModal();
+    await loadMonitoramentosIpAtivos();
+    showToast("Monitoramento iniciado");
+  } catch (error) {
+    showToast(error.message || "NÃ£o foi possÃ­vel iniciar o monitoramento.", 4200);
+  } finally {
+    setFormBusy(form, false);
+  }
+}
+
+async function encerrarMonitoramentoIp(id) {
+  const itemId = safeRecordId(id);
+  if (!itemId) return;
+  await runPendingAction(`encerrar-monitoramento-ip:${itemId}`, async () => {
+    await api(`/api/monitoramentos/${itemId}/parar`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await loadMonitoramentosIpAtivos();
+    showToast("Monitoramento encerrado");
+  });
+}
+
+function monitoramentoEventoTexto(evento) {
+  if (evento.tipo === "iniciado") return "Monitoramento iniciado";
+  if (evento.tipo === "queda") return "Queda detectada";
+  if (evento.tipo === "recuperacao") return `ConexÃ£o restabelecida - ${formatDurationMs(evento.tempoMs)}`;
+  if (evento.tipo === "encerrado") return "Monitoramento encerrado";
+  return evento.status === "Offline" ? "Ping sem resposta" : `Ping ${evento.status || "-"}`;
+}
+
+async function abrirMonitoramentoIpDetalhes(id) {
+  const itemId = safeRecordId(id);
+  if (!itemId) return;
+  try {
+    const detalhes = await api(`/api/monitoramentos/${itemId}`, {
+      trackBusy: false,
+    });
+    $("monitoramentoIpDetalhesTitulo").textContent = `${detalhes.nome || "-"} / ${detalhes.ip || "-"}`;
+    const timeline = $("monitoramentoIpTimeline");
+    timeline.innerHTML = (detalhes.eventos || [])
+      .map((evento) => {
+        const horario = new Date(String(evento.criadoEm).replace(" ", "T")).toLocaleTimeString("pt-BR");
+        return `
+          <li>
+            <time>${escapeHtml(horario)}</time>
+            <span>${escapeHtml(monitoramentoEventoTexto(evento))}</span>
+          </li>
+        `;
+      })
+      .join("");
+    $("monitoramentoIpDetalhes")?.classList.remove("app-hidden");
+  } catch (error) {
+    showToast(error.message || "NÃ£o foi possÃ­vel carregar os detalhes.", 4200);
+  }
+}
+
+function fecharMonitoramentoIpDetalhes() {
+  $("monitoramentoIpDetalhes")?.classList.add("app-hidden");
+}
+
+function formatTemporaryDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function formatTemporarySeconds(ms) {
+  const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  return `${seconds} segundo${seconds === 1 ? "" : "s"}`;
+}
+
+function renderMonitoramentosTemporarios() {
+  const section = $("monitoramentosTemporarios");
+  const list = $("monitoramentosTemporariosList");
+  if (!section || !list) return;
+  section.classList.remove("app-hidden");
+  if (!monitoramentosTemporarios.length) {
+    list.innerHTML = '<p class="temporario-vazio">Nenhum monitoramento temporário ativo.</p>';
+  }
+  const nextRenderKey = JSON.stringify(
+    [...monitoramentosTemporarios, ...historicoMonitoramentosTemporarios].map((item) => [
+      item.id,
+      item.nome,
+      item.ip,
+      item.ativo,
+      item.statusAtual,
+    ]),
+  );
+  if (nextRenderKey === monitoramentosTemporariosRenderKey) {
+    atualizarMetricasMonitoramentosTemporarios();
+    return;
+  }
+  monitoramentosTemporariosRenderKey = nextRenderKey;
+  if (monitoramentosTemporarios.length) list.innerHTML = monitoramentosTemporarios
+    .map((item) => {
+      const statusClass = item.statusAtual === "Online" ? "online" : item.statusAtual === "Offline" ? "offline" : "unknown";
+      const disponibilidade = formatPercent(item.disponibilidade).replace(".", ",");
+      return `
+        <article class="monitoramento-temporario-card ${statusClass}" data-temporario-id="${item.id}">
+          <div class="monitoramento-temporario-heading">
+            <span>MONITORAMENTO TEMPORÁRIO</span>
+            <strong>${escapeHtml(item.nome || "Monitoramento temporario")}</strong>
+            <code>${escapeHtml(item.ip || "-")}</code>
+          </div>
+          <dl class="monitoramento-temporario-metrics">
+            <div><dt>Status atual</dt><dd>${badge(item.ativo ? item.statusAtual || "Iniciando" : "Encerrado")}</dd></div>
+            <div><dt>Tempo monitorado</dt><dd data-temporario-campo="tempo">${escapeHtml(formatTemporaryDuration(item.tempoMonitoradoMs))}</dd></div>
+            <div><dt>Verificacoes</dt><dd data-temporario-campo="verificacoes">${escapeHtml(safeCount(item.totalVerificacoes))}</dd></div>
+            <div><dt>Quedas</dt><dd data-temporario-campo="quedas">${escapeHtml(safeCount(item.quedas))}</dd></div>
+            <div><dt>Falhas de ping</dt><dd data-temporario-campo="falhas">${escapeHtml(safeCount(item.falhasPing))}</dd></div>
+            <div><dt>Tempo offline</dt><dd data-temporario-campo="offline">${escapeHtml(formatTemporarySeconds(item.tempoOfflineMs))}</dd></div>
+            <div><dt>Maior queda</dt><dd data-temporario-campo="maior-queda">${escapeHtml(formatTemporarySeconds(item.maiorQuedaMs))}</dd></div>
+            <div><dt>Disponibilidade</dt><dd data-temporario-campo="disponibilidade">${escapeHtml(disponibilidade)}</dd></div>
+          </dl>
+          <div class="actions monitoramento-temporario-actions">
+            <button class="secondary" type="button" onclick="abrirMonitoramentoTemporarioDetalhes('${item.id}')">Ver detalhes</button>
+            ${item.ativo ? `<button class="danger" type="button" onclick="encerrarMonitoramentoTemporario('${item.id}')">Encerrar monitoramento</button>` : ""}
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+  const resumo = $("monitoramentosTemporariosResumo");
+  if (resumo) resumo.innerHTML = [["ATIVOS", resumoMonitoramentosTemporarios.ativos], ["QUEDAS DETECTADAS", resumoMonitoramentosTemporarios.quedas], ["FALHAS DE PING", resumoMonitoramentosTemporarios.falhasPing], ["DISPONIBILIDADE MÉDIA", `${formatPercent(resumoMonitoramentosTemporarios.disponibilidade).replace(".", ",")}%`]].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
+  const historico = $("historicoMonitoramentosTemporariosList");
+  if (historico) historico.innerHTML = historicoMonitoramentosTemporarios.map((item) => `<article class="historico-temporario-row"><strong>${escapeHtml(item.nome || "-")}</strong><code>${escapeHtml(item.ip || "-")}</code><span>Início: ${escapeHtml(new Date(item.iniciadoEm).toLocaleString("pt-BR"))}</span><span>Fim: ${escapeHtml(new Date(item.encerradoEm).toLocaleString("pt-BR"))}</span><span>Duração: ${escapeHtml(formatTemporaryDuration(item.tempoMonitoradoMs))}</span><span>Verificações: ${safeCount(item.totalVerificacoes)}</span><span>Quedas: ${safeCount(item.quedas)}</span><span>Falhas de ping: ${safeCount(item.falhasPing)}</span><span>Tempo offline: ${escapeHtml(formatTemporarySeconds(item.tempoOfflineMs))}</span><span>Maior queda: ${escapeHtml(formatTemporarySeconds(item.maiorQuedaMs))}</span><span>Disponibilidade: ${escapeHtml(formatPercent(item.disponibilidade).replace(".", ","))}</span><button class="secondary" type="button" onclick="abrirMonitoramentoTemporarioDetalhes('${item.id}')">Ver detalhes</button></article>`).join("");
+  atualizarMetricasMonitoramentosTemporarios();
+}
+
+function atualizarMetricasMonitoramentosTemporarios() {
+  monitoramentosTemporarios.forEach((item) => {
+    const card = document.querySelector(`[data-temporario-id="${item.id}"]`);
+    if (!card) return;
+    const valores = {
+      tempo: formatTemporaryDuration(item.tempoMonitoradoMs),
+      verificacoes: safeCount(item.totalVerificacoes),
+      quedas: safeCount(item.quedas),
+      falhas: safeCount(item.falhasPing),
+      offline: formatTemporarySeconds(item.tempoOfflineMs),
+      "maior-queda": formatTemporarySeconds(item.maiorQuedaMs),
+      disponibilidade: formatPercent(item.disponibilidade).replace(".", ","),
+    };
+    Object.entries(valores).forEach(([campo, valor]) => {
+      const elemento = card.querySelector(`[data-temporario-campo="${campo}"]`);
+      if (elemento && elemento.textContent !== String(valor)) elemento.textContent = valor;
+    });
+  });
+}
+
+function iniciarAtualizacaoMonitoramentosTemporarios() {
+  clearTimeout(monitoramentosTemporariosTimer);
+  const atualizar = async () => {
+    if (!currentUser) return;
+    try {
+      await loadMonitoramentosTemporarios();
+    } catch (error) {
+      console.error("Falha ao atualizar monitoramentos temporarios:", error);
+    } finally {
+      if (currentUser) {
+        monitoramentosTemporariosTimer = setTimeout(atualizar, IP_AUTO_CHECK_INTERVAL_MS);
+      }
+    }
+  };
+  monitoramentosTemporariosTimer = setTimeout(atualizar, IP_AUTO_CHECK_INTERVAL_MS);
+}
+
+function pararAtualizacaoMonitoramentosTemporarios() {
+  clearTimeout(monitoramentosTemporariosTimer);
+  monitoramentosTemporariosTimer = null;
+}
+
+function abrirMonitoramentoTemporarioModal() {
+  $("monitoramentoTemporarioForm")?.reset();
+  $("monitoramentoTemporarioDuracao").value = "15";
+  $("monitoramentoTemporarioModal")?.classList.remove("app-hidden");
+  $("monitoramentoTemporarioIp")?.focus();
+}
+
+function fecharMonitoramentoTemporarioModal() {
+  $("monitoramentoTemporarioModal")?.classList.add("app-hidden");
+}
+
+async function iniciarMonitoramentoTemporario(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const duracao = $("monitoramentoTemporarioDuracao").value;
+  setFormBusy(form, true);
+  try {
+    await api("/api/monitoramentos-temporarios", {
+      method: "POST",
+      body: JSON.stringify({
+        nome: $("monitoramentoTemporarioNome").value.trim(),
+        ip: $("monitoramentoTemporarioIp").value.trim(),
+        duracaoMinutos: duracao === "" ? null : Number(duracao),
+      }),
+    });
+    fecharMonitoramentoTemporarioModal();
+    await loadMonitoramentosTemporarios();
+    showToast("Monitoramento temporario iniciado");
+  } catch (error) {
+    showToast(error.message || "Nao foi possivel iniciar o monitoramento.", 4200);
+  } finally {
+    setFormBusy(form, false);
+  }
+}
+
+async function encerrarMonitoramentoTemporario(id) {
+  if (!id) return;
+  await runPendingAction(`encerrar-monitoramento-temporario:${id}`, async () => {
+    await api(`/api/monitoramentos-temporarios/${encodeURIComponent(id)}/parar`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await loadMonitoramentosTemporarios();
+    showToast("Monitoramento temporario encerrado");
+  });
+}
+
+async function limparHistoricoMonitoramentosTemporarios() {
+  await api("/api/monitoramentos-temporarios/historico", { method: "DELETE" });
+  historicoMonitoramentosTemporarios = [];
+  await loadMonitoramentosTemporarios();
+}
+
+function textoEventoTemporario(evento) {
+  if (evento.tipo === "iniciado") return "Monitoramento iniciado";
+  if (evento.tipo === "queda") return "Queda detectada";
+  if (evento.tipo === "recuperacao") return `Conexao restabelecida - ${formatTemporarySeconds(evento.tempoMs)}`;
+  return "Monitoramento encerrado";
+}
+
+async function abrirMonitoramentoTemporarioDetalhes(id) {
+  if (!id) return;
+  try {
+    const detalhes = await api(`/api/monitoramentos-temporarios/${encodeURIComponent(id)}`, {
+      trackBusy: false,
+    });
+    $("monitoramentoTemporarioDetalhesTitulo").textContent = `${detalhes.nome || "Monitoramento temporario"} / ${detalhes.ip || "-"}`;
+    $("monitoramentoTemporarioResumo").innerHTML = `
+      <span>${escapeHtml(formatTemporaryDuration(detalhes.tempoMonitoradoMs))}</span>
+      <span>${escapeHtml(safeCount(detalhes.totalVerificacoes))} verificacoes</span>
+      <span>${escapeHtml(safeCount(detalhes.quedas))} quedas</span>
+      <span>${escapeHtml(safeCount(detalhes.falhasPing))} falhas</span>
+      <span>${escapeHtml(formatTemporarySeconds(detalhes.tempoOfflineMs))} offline</span>
+      <span>maior queda: ${escapeHtml(formatTemporarySeconds(detalhes.maiorQuedaMs))}</span>
+      <span>${escapeHtml(formatPercent(detalhes.disponibilidade).replace(".", ","))}</span>
+    `;
+    $("monitoramentoTemporarioTimeline").innerHTML = (detalhes.eventos || [])
+      .map((evento) => {
+        const horario = new Date(evento.criadoEm).toLocaleTimeString("pt-BR");
+        return `<li><time>${escapeHtml(horario)}</time><span>${escapeHtml(textoEventoTemporario(evento))}</span></li>`;
+      })
+      .join("");
+    $("monitoramentoTemporarioDetalhes")?.classList.remove("app-hidden");
+  } catch (error) {
+    showToast(error.message || "Nao foi possivel carregar os detalhes.", 4200);
+  }
+}
+
+function fecharMonitoramentoTemporarioDetalhes() {
+  $("monitoramentoTemporarioDetalhes")?.classList.add("app-hidden");
 }
 
 async function saveIp(e) {
@@ -1658,10 +2073,6 @@ async function verificarTodosIps({ silent = false } = {}) {
     return;
   }
 
-  if (!silent) {
-    sleepController?.beginBusy();
-  }
-
   let operation = ipCheckPromise;
   if (!operation) {
     operation = (async () => {
@@ -1705,9 +2116,6 @@ async function verificarTodosIps({ silent = false } = {}) {
       button.textContent = "Verificar todos";
     }
 
-    if (!silent) {
-      sleepController?.endBusy();
-    }
   }
 }
 
@@ -2048,5 +2456,4 @@ setupTabs();
 setupForms();
 setupDashboard();
 setupMotivation();
-setupSleepController();
 checkAuth().catch((error) => showToast(error.message));

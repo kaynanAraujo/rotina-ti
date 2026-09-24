@@ -194,7 +194,7 @@ async function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       categoria TEXT NOT NULL DEFAULT 'Outro',
       nome TEXT NOT NULL,
-      ip TEXT NOT NULL UNIQUE,
+      ip TEXT NOT NULL,
       setor TEXT,
       observacoes TEXT,
       status TEXT NOT NULL DEFAULT 'Não verificado',
@@ -212,6 +212,91 @@ async function initDB() {
     categoria: "TEXT NOT NULL DEFAULT 'Outro'"
   });
   await run(`UPDATE ips_monitorados SET categoria = 'Outro' WHERE categoria IS NULL OR TRIM(categoria) = ''`);
+
+  // Migra o UNIQUE(ip) legado para a unicidade por usuário, preservando ids e dados.
+  const ipSchema = await get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ips_monitorados'");
+  if (ipSchema?.sql && /ip\s+TEXT[^,]*UNIQUE/i.test(ipSchema.sql)) {
+    const legacyColumns = new Set((await all('PRAGMA table_info(ips_monitorados)')).map((column) => column.name));
+    const legacyValue = (column, fallback) => legacyColumns.has(column) ? `"${column}"` : fallback;
+    await transaction(async (tx) => {
+      await tx.run('ALTER TABLE ips_monitorados RENAME TO ips_monitorados_legado');
+      await tx.run(`
+        CREATE TABLE ips_monitorados (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          categoria TEXT NOT NULL DEFAULT 'Outro',
+          nome TEXT NOT NULL,
+          ip TEXT NOT NULL,
+          setor TEXT,
+          observacoes TEXT,
+          status TEXT NOT NULL DEFAULT 'NÃ£o verificado',
+          tempo_ms INTEGER,
+          verificado_em TEXT,
+          criado_por_id INTEGER,
+          criado_por_nome TEXT,
+          criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          atualizado_em TEXT,
+          FOREIGN KEY (criado_por_id) REFERENCES usuarios(id)
+        )
+      `);
+      await tx.run(`
+        INSERT INTO ips_monitorados (
+          id, categoria, nome, ip, setor, observacoes, status, tempo_ms,
+          verificado_em, criado_por_id, criado_por_nome, criado_em, atualizado_em
+        ) SELECT
+          ${legacyValue('id', 'NULL')},
+          ${legacyValue('categoria', "'Outro'")},
+          ${legacyValue('nome', "''")},
+          ${legacyValue('ip', "''")},
+          ${legacyValue('setor', 'NULL')},
+          ${legacyValue('observacoes', 'NULL')},
+          ${legacyValue('status', "'NÃ£o verificado'")},
+          ${legacyValue('tempo_ms', 'NULL')},
+          ${legacyValue('verificado_em', 'NULL')},
+          ${legacyValue('criado_por_id', 'NULL')},
+          ${legacyValue('criado_por_nome', 'NULL')},
+          ${legacyValue('criado_em', 'CURRENT_TIMESTAMP')},
+          ${legacyValue('atualizado_em', 'NULL')}
+        FROM ips_monitorados_legado
+      `);
+      await tx.run('DROP TABLE ips_monitorados_legado');
+      await tx.run('CREATE UNIQUE INDEX IF NOT EXISTS uq_ips_monitorados_usuario_ip ON ips_monitorados(criado_por_id, ip)');
+    });
+  } else {
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS uq_ips_monitorados_usuario_ip ON ips_monitorados(criado_por_id, ip)');
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS monitoramentos_ip (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ip_monitorado_id INTEGER NOT NULL,
+      iniciado_por_id INTEGER,
+      iniciado_por_nome TEXT,
+      iniciado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      encerrado_em TEXT,
+      ativo INTEGER NOT NULL DEFAULT 1,
+      duracao_minutos INTEGER,
+      total_verificacoes INTEGER NOT NULL DEFAULT 0,
+      falhas_ping INTEGER NOT NULL DEFAULT 0,
+      quedas INTEGER NOT NULL DEFAULT 0,
+      tempo_offline_ms INTEGER NOT NULL DEFAULT 0,
+      maior_queda_ms INTEGER NOT NULL DEFAULT 0,
+      status_atual TEXT NOT NULL DEFAULT 'Iniciando',
+      offline_desde TEXT,
+      FOREIGN KEY (ip_monitorado_id) REFERENCES ips_monitorados(id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS monitoramento_ip_eventos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      monitoramento_id INTEGER NOT NULL,
+      tipo TEXT NOT NULL,
+      status TEXT,
+      tempo_ms INTEGER,
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (monitoramento_id) REFERENCES monitoramentos_ip(id)
+    )
+  `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS sessoes (
@@ -231,6 +316,10 @@ async function initDB() {
              ON historico(entidade, entidade_id, criado_em)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_sessoes_expiracao
              ON sessoes(expira_em)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_monitoramentos_ip_ativos
+             ON monitoramentos_ip(ip_monitorado_id, ativo)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_monitoramento_ip_eventos
+             ON monitoramento_ip_eventos(monitoramento_id, criado_em)`);
 }
 
 module.exports = { db, run, get, all, transaction, initDB, dbPath };

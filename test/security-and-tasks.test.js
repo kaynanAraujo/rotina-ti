@@ -720,16 +720,26 @@ test('preserva cadastro, edição, verificações e permissão de exclusão do m
   const allChecked = await responseJson(
     await jsonRequest('/api/ips/verificar-todos', 'POST', {}, adminCookie)
   );
-  assert.equal(allChecked.length, 1);
-  assert.equal(allChecked[0].id, ipId);
+  assert.equal(allChecked.length, 0);
+
+  const adminIp = await responseJson(
+    await jsonRequest('/api/ips', 'POST', { categoria: 'Servidor', nome: 'Mesmo IP em outra conta', ip: '127.0.0.1' }, adminCookie)
+  );
+  assert.notEqual(adminIp.id, ipId);
+  assert.equal((await responseJson(await request('/api/ips', {}, adminCookie))).length, 1);
+  await responseJson(await jsonRequest(`/api/ips/${adminIp.id}`, 'PUT', { nome: 'Ataque', ip: '127.0.0.1' }, technicianCookie), 404);
+  await responseJson(await jsonRequest(`/api/ips/${adminIp.id}/verificar`, 'POST', {}, technicianCookie), 404);
 
   await responseJson(
     await request(`/api/ips/${ipId}`, { method: 'DELETE' }, technicianCookie),
     403
   );
   await responseJson(
-    await request(`/api/ips/${ipId}`, { method: 'DELETE' }, adminCookie)
+    await request(`/api/ips/${adminIp.id}`, { method: 'DELETE' }, technicianCookie),
+    403
   );
+  await responseJson(await request(`/api/ips/${adminIp.id}`, { method: 'DELETE' }, adminCookie));
+  assert.equal((await responseJson(await request('/api/ips', {}, technicianCookie))).length, 1);
   assert.equal((await responseJson(await request('/api/ips', {}, adminCookie))).length, 0);
 });
 
@@ -744,6 +754,8 @@ test('encerra com schema esperado, dados temporários coerentes e integridade SQ
       'historico',
       'ips_monitorados',
       'manutencoes',
+      'monitoramento_ip_eventos',
+      'monitoramentos_ip',
       'pendencias',
       'sessoes',
       'usuarios'

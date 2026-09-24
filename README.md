@@ -21,7 +21,6 @@ O **Rotina TI** foi desenvolvido para funcionar em um computador servidor dentro
 - Monitoramento manual de IPs
 - Status online, offline e tempo de resposta
 - Dashboard com indicadores operacionais
-- Tela de descanso com relógio e animações
 - Layout responsivo para desktop, tablet e celular
 - Inicialização simplificada por arquivo `.bat`
 
@@ -221,18 +220,6 @@ Categorias disponíveis:
 - Outro
 
 A verificação é executada pelo computador servidor. Alguns dispositivos podem estar ligados e ainda assim não responder ao protocolo de ping.
-
-## Tela de descanso
-
-A tela de descanso exibe:
-
-- Hora atual
-- Data completa
-- Dia da semana
-- Usuário conectado
-- Identidade visual do sistema
-
-Ela pode ser aberta manualmente ou ativada automaticamente após um período de inatividade. O retorno ao painel ocorre pelo botão de voltar, pela tecla `ESC` ou por atividade do usuário, conforme a configuração do sistema.
 
 ## Backup
 

@@ -31,6 +31,11 @@ const IP_CATEGORIES = new Set([
   'Servidor',
   'Outro'
 ]);
+const MONITORAMENTO_IP_INTERVAL_MS = 3000;
+const MONITORAMENTO_DURACOES = new Set([5, 15, 30, 60]);
+const monitoramentosIpAtivos = new Map();
+const monitoramentosTemporarios = new Map();
+const historicoMonitoramentosTemporarios = new Map();
 
 function normalizeIpCategory(value) {
   const categoria = String(value || '').trim();
@@ -322,6 +327,65 @@ function mapIpMonitorado(row) {
   };
 }
 
+function parseDbDate(value) {
+  if (!value) return null;
+  const normalized = String(value).replace(' ', 'T');
+  const date = new Date(/(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized) ? normalized : `${normalized}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDbDate(date = new Date()) {
+  return date.toISOString();
+}
+
+function msSince(value, now = Date.now()) {
+  const date = parseDbDate(value);
+  return date ? Math.max(0, now - date.getTime()) : 0;
+}
+
+function mapMonitoramentoIp(row) {
+  const now = Date.now();
+  const offlineAbertoMs = row.ativo && row.offline_desde ? msSince(row.offline_desde, now) : 0;
+  const tempoOfflineMs = Number(row.tempo_offline_ms || 0) + offlineAbertoMs;
+  const total = Number(row.total_verificacoes || 0);
+  const falhas = Number(row.falhas_ping || 0);
+  const disponibilidade = total > 0 ? Math.max(0, ((total - falhas) / total) * 100) : 100;
+  return {
+    id: row.id,
+    ipMonitoradoId: row.ip_monitorado_id,
+    nome: row.nome,
+    ip: row.ip,
+    iniciadoPorId: row.iniciado_por_id,
+    iniciadoPorNome: row.iniciado_por_nome,
+    iniciadoEm: row.iniciado_em,
+    encerradoEm: row.encerrado_em,
+    ativo: Boolean(row.ativo),
+    duracaoMinutos: row.duracao_minutos,
+    totalVerificacoes: total,
+    falhasPing: falhas,
+    quedas: Number(row.quedas || 0),
+    tempoOfflineMs,
+    maiorQuedaMs: Math.max(Number(row.maior_queda_ms || 0), offlineAbertoMs),
+    statusAtual: row.status_atual || 'Iniciando',
+    offlineDesde: row.offline_desde,
+    tempoMonitoradoMs: row.encerrado_em
+      ? Math.max(0, msSince(row.iniciado_em, parseDbDate(row.encerrado_em)?.getTime() || now))
+      : msSince(row.iniciado_em, now),
+    disponibilidade
+  };
+}
+
+function mapMonitoramentoEvento(row) {
+  return {
+    id: row.id,
+    monitoramentoId: row.monitoramento_id,
+    tipo: row.tipo,
+    status: row.status,
+    tempoMs: row.tempo_ms,
+    criadoEm: row.criado_em
+  };
+}
+
 function pingIp(ip) {
   return new Promise((resolve) => {
     const isWindows = process.platform === 'win32';
@@ -348,6 +412,166 @@ function pingIp(ip) {
   });
 }
 
+function criarIdMonitoramentoTemporario() {
+  return crypto.randomBytes(12).toString('hex');
+}
+
+function mapMonitoramentoTemporario(monitoramento) {
+  const now = Date.now();
+  const offlineAbertoMs = monitoramento.ativo && monitoramento.offlineDesde
+    ? Math.max(0, now - monitoramento.offlineDesde)
+    : 0;
+  const tempoOfflineMs = monitoramento.tempoOfflineMs + offlineAbertoMs;
+  const total = monitoramento.totalVerificacoes;
+  const disponibilidade = total > 0
+    ? Math.max(0, ((total - monitoramento.falhasPing) / total) * 100)
+    : 100;
+  const encerradoEm = monitoramento.encerradoEm || null;
+  const fim = encerradoEm ? new Date(encerradoEm).getTime() : now;
+
+  return {
+    id: monitoramento.id,
+    nome: monitoramento.nome,
+    ip: monitoramento.ip,
+    iniciadoEm: monitoramento.iniciadoEm,
+    encerradoEm,
+    ativo: monitoramento.ativo,
+    duracaoMinutos: monitoramento.duracaoMinutos,
+    statusAtual: monitoramento.statusAtual,
+    totalVerificacoes: total,
+    falhasPing: monitoramento.falhasPing,
+    quedas: monitoramento.quedas,
+    tempoOfflineMs,
+    maiorQuedaMs: Math.max(monitoramento.maiorQuedaMs, offlineAbertoMs),
+    tempoMonitoradoMs: Math.max(0, fim - new Date(monitoramento.iniciadoEm).getTime()),
+    disponibilidade,
+    eventos: monitoramento.eventos.map((evento) => ({ ...evento }))
+  };
+}
+
+function encerrarMonitoramentoTemporario(id) {
+  const monitoramento = monitoramentosTemporarios.get(id);
+  if (!monitoramento || !monitoramento.ativo) return monitoramento;
+
+  const now = Date.now();
+  if (monitoramento.offlineDesde) {
+    const quedaMs = Math.max(0, now - monitoramento.offlineDesde);
+    monitoramento.tempoOfflineMs += quedaMs;
+    monitoramento.maiorQuedaMs = Math.max(monitoramento.maiorQuedaMs, quedaMs);
+    monitoramento.offlineDesde = null;
+  }
+  monitoramento.ativo = false;
+  monitoramento.encerradoEm = new Date(now).toISOString();
+  monitoramento.eventos.push({ tipo: 'encerrado', status: monitoramento.statusAtual, tempoMs: null, criadoEm: monitoramento.encerradoEm });
+  clearTimeout(monitoramento.timer);
+  clearTimeout(monitoramento.durationTimer);
+  monitoramento.timer = null;
+  monitoramento.durationTimer = null;
+  monitoramentosTemporarios.delete(id);
+  historicoMonitoramentosTemporarios.set(id, monitoramento);
+  while (historicoMonitoramentosTemporarios.size > 20) {
+    historicoMonitoramentosTemporarios.delete(historicoMonitoramentosTemporarios.keys().next().value);
+  }
+  return monitoramento;
+}
+
+async function executarMonitoramentoTemporario(id) {
+  const monitoramento = monitoramentosTemporarios.get(id);
+  if (!monitoramento || !monitoramento.ativo) return;
+
+  try {
+    if (monitoramento.duracaoMinutos
+      && Date.now() - new Date(monitoramento.iniciadoEm).getTime() >= monitoramento.duracaoMinutos * 60 * 1000) {
+      encerrarMonitoramentoTemporario(id);
+      return;
+    }
+
+    const resultado = await pingIp(monitoramento.ip);
+    const now = Date.now();
+    const isOffline = resultado.status === 'Offline';
+    const wasOffline = monitoramento.statusAtual === 'Offline';
+    monitoramento.totalVerificacoes += 1;
+
+    if (isOffline) {
+      monitoramento.falhasPing += 1;
+      if (!wasOffline) {
+        if (monitoramento.statusAtual === 'Online') monitoramento.quedas += 1;
+        monitoramento.offlineDesde = now;
+        monitoramento.eventos.push({
+          tipo: 'queda',
+          status: 'Offline',
+          tempoMs: null,
+          criadoEm: new Date(now).toISOString()
+        });
+      }
+    } else if (wasOffline) {
+      const quedaMs = monitoramento.offlineDesde ? Math.max(0, now - monitoramento.offlineDesde) : 0;
+      monitoramento.tempoOfflineMs += quedaMs;
+      monitoramento.maiorQuedaMs = Math.max(monitoramento.maiorQuedaMs, quedaMs);
+      monitoramento.offlineDesde = null;
+      monitoramento.eventos.push({
+        tipo: 'recuperacao',
+        status: 'Online',
+        tempoMs: quedaMs,
+        criadoEm: new Date(now).toISOString()
+      });
+    }
+    monitoramento.statusAtual = resultado.status;
+  } catch (error) {
+    console.error('Falha no monitoramento temporario de IP:', error);
+  } finally {
+    const atual = monitoramentosTemporarios.get(id);
+    if (atual?.ativo) {
+      const timer = setTimeout(() => executarMonitoramentoTemporario(id), MONITORAMENTO_IP_INTERVAL_MS);
+      timer.unref();
+      atual.timer = timer;
+    }
+  }
+}
+
+function iniciarMonitoramentoTemporario({ ip, nome, duracaoMinutos, usuarioId, usuarioNome }) {
+  const iniciadoEm = new Date().toISOString();
+  const monitoramento = {
+    id: criarIdMonitoramentoTemporario(),
+    usuarioId,
+    usuarioNome,
+    ip,
+    nome: nome || 'Monitoramento temporario',
+    iniciadoEm,
+    encerradoEm: null,
+    ativo: true,
+    duracaoMinutos,
+    statusAtual: 'Iniciando',
+    totalVerificacoes: 0,
+    falhasPing: 0,
+    quedas: 0,
+    tempoOfflineMs: 0,
+    maiorQuedaMs: 0,
+    offlineDesde: null,
+    eventos: [{
+      tipo: 'iniciado',
+      status: 'Iniciando',
+      tempoMs: null,
+      criadoEm: iniciadoEm
+    }],
+    timer: null,
+    durationTimer: null
+  };
+  monitoramentosTemporarios.set(monitoramento.id, monitoramento);
+  const timer = setTimeout(() => executarMonitoramentoTemporario(monitoramento.id), 0);
+  timer.unref();
+  monitoramento.timer = timer;
+  if (duracaoMinutos) {
+    const durationTimer = setTimeout(
+      () => encerrarMonitoramentoTemporario(monitoramento.id),
+      duracaoMinutos * 60 * 1000
+    );
+    durationTimer.unref();
+    monitoramento.durationTimer = durationTimer;
+  }
+  return monitoramento;
+}
+
 async function verificarIpSalvo(row) {
   const resultado = await pingIp(row.ip);
   await run(
@@ -359,6 +583,140 @@ async function verificarIpSalvo(row) {
 
   const atualizado = await get('SELECT * FROM ips_monitorados WHERE id = ?', [row.id]);
   return mapIpMonitorado(atualizado);
+}
+
+async function carregarMonitoramentoIp(id) {
+  const row = await get(
+    `SELECT m.*, ip.nome, ip.ip
+     FROM monitoramentos_ip m
+     JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+     WHERE m.id = ?`,
+    [id]
+  );
+  return row ? mapMonitoramentoIp(row) : null;
+}
+
+async function encerrarMonitoramentoIp(id) {
+  const row = await get('SELECT * FROM monitoramentos_ip WHERE id = ?', [id]);
+  if (!row || !row.ativo) return row;
+
+  const now = formatDbDate();
+  let tempoOfflineMs = Number(row.tempo_offline_ms || 0);
+  let maiorQuedaMs = Number(row.maior_queda_ms || 0);
+  if (row.offline_desde) {
+    const quedaMs = msSince(row.offline_desde);
+    tempoOfflineMs += quedaMs;
+    maiorQuedaMs = Math.max(maiorQuedaMs, quedaMs);
+  }
+
+  await transaction(async (tx) => {
+    await tx.run(
+      `UPDATE monitoramentos_ip
+       SET ativo = 0, encerrado_em = ?, tempo_offline_ms = ?, maior_queda_ms = ?, offline_desde = NULL
+       WHERE id = ?`,
+      [now, tempoOfflineMs, maiorQuedaMs, id]
+    );
+    await tx.run(
+      `INSERT INTO monitoramento_ip_eventos (monitoramento_id, tipo, status, tempo_ms, criado_em)
+       VALUES (?, 'encerrado', ?, NULL, ?)`,
+      [id, row.status_atual || 'Encerrado', now]
+    );
+  });
+
+  clearTimeout(monitoramentosIpAtivos.get(id)?.timer);
+  monitoramentosIpAtivos.delete(id);
+  return get('SELECT * FROM monitoramentos_ip WHERE id = ?', [id]);
+}
+
+async function executarMonitoramentoIp(id) {
+  const active = monitoramentosIpAtivos.get(id);
+  if (!active) return;
+
+  try {
+    const row = await get(
+      `SELECT m.*, ip.ip
+       FROM monitoramentos_ip m
+       JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+       WHERE m.id = ?`,
+      [id]
+    );
+    if (!row || !row.ativo) {
+      monitoramentosIpAtivos.delete(id);
+      return;
+    }
+
+    const startedAt = parseDbDate(row.iniciado_em)?.getTime();
+    if (row.duracao_minutos && startedAt && Date.now() - startedAt >= row.duracao_minutos * 60 * 1000) {
+      await encerrarMonitoramentoIp(id);
+      return;
+    }
+
+    const resultado = await pingIp(row.ip);
+    const now = formatDbDate();
+    const wasOffline = row.status_atual === 'Offline';
+    const isOffline = resultado.status === 'Offline';
+    let eventoTipo = 'verificacao';
+    let tempoOfflineMs = Number(row.tempo_offline_ms || 0);
+    let maiorQuedaMs = Number(row.maior_queda_ms || 0);
+    let offlineDesde = row.offline_desde;
+    let quedas = Number(row.quedas || 0);
+    let eventoTempoMs = resultado.tempoMs;
+
+    if (isOffline && row.status_atual === 'Online') {
+      eventoTipo = 'queda';
+      quedas += 1;
+      offlineDesde = now;
+    } else if (isOffline && !offlineDesde) {
+      offlineDesde = now;
+    } else if (!isOffline && wasOffline) {
+      eventoTipo = 'recuperacao';
+      const quedaMs = msSince(row.offline_desde);
+      eventoTempoMs = quedaMs;
+      tempoOfflineMs += quedaMs;
+      maiorQuedaMs = Math.max(maiorQuedaMs, quedaMs);
+      offlineDesde = null;
+    }
+
+    await transaction(async (tx) => {
+      await tx.run(
+        `UPDATE monitoramentos_ip
+         SET total_verificacoes = total_verificacoes + 1,
+             falhas_ping = falhas_ping + ?,
+             quedas = ?,
+             tempo_offline_ms = ?,
+             maior_queda_ms = ?,
+             status_atual = ?,
+             offline_desde = ?
+         WHERE id = ? AND ativo = 1`,
+        [isOffline ? 1 : 0, quedas, tempoOfflineMs, maiorQuedaMs, resultado.status, offlineDesde, id]
+      );
+      await tx.run(
+        `INSERT INTO monitoramento_ip_eventos (monitoramento_id, tipo, status, tempo_ms, criado_em)
+         VALUES (?, ?, ?, ?, ?)`,
+        [id, eventoTipo, resultado.status, eventoTempoMs, now]
+      );
+    });
+  } catch (error) {
+    console.error('Falha no monitoramento de IP:', error);
+  } finally {
+    if (monitoramentosIpAtivos.has(id)) {
+      const timer = setTimeout(() => executarMonitoramentoIp(id), MONITORAMENTO_IP_INTERVAL_MS);
+      timer.unref();
+      monitoramentosIpAtivos.set(id, { timer });
+    }
+  }
+}
+
+function agendarMonitoramentoIp(id) {
+  clearTimeout(monitoramentosIpAtivos.get(id)?.timer);
+  const timer = setTimeout(() => executarMonitoramentoIp(id), 0);
+  timer.unref();
+  monitoramentosIpAtivos.set(id, { timer });
+}
+
+async function restaurarMonitoramentosIpAtivos() {
+  const rows = await all('SELECT id FROM monitoramentos_ip WHERE ativo = 1');
+  rows.forEach((row) => agendarMonitoramentoIp(row.id));
 }
 
 app.get('/api/health', (req, res) => {
@@ -1004,7 +1362,7 @@ app.get('/api/anexos/:id', requireAuth, async (req, res, next) => {
 // IPs cadastrados manualmente e compartilhados com a equipe.
 app.get('/api/ips', requireAuth, async (req, res) => {
   try {
-    const rows = await all(`SELECT * FROM ips_monitorados ORDER BY nome COLLATE NOCASE, ip`);
+    const rows = await all(`SELECT * FROM ips_monitorados WHERE criado_por_id = ? ORDER BY nome COLLATE NOCASE, ip`, [req.session.user.id]);
     res.json(rows.map(mapIpMonitorado));
   } catch (error) {
     console.error(error);
@@ -1023,7 +1381,7 @@ app.post('/api/ips', requireAuth, async (req, res) => {
     if (!nome) return res.status(400).json({ error: 'Informe o nome do equipamento.' });
     if (!net.isIPv4(ip)) return res.status(400).json({ error: 'Informe um endereço IPv4 válido.' });
 
-    const existente = await get('SELECT id FROM ips_monitorados WHERE ip = ?', [ip]);
+    const existente = await get('SELECT id FROM ips_monitorados WHERE criado_por_id = ? AND ip = ?', [req.session.user.id, ip]);
     if (existente) return res.status(409).json({ error: 'Este IP já está cadastrado.' });
 
     const result = await run(
@@ -1045,7 +1403,7 @@ app.post('/api/ips', requireAuth, async (req, res) => {
 app.put('/api/ips/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const atual = await get('SELECT * FROM ips_monitorados WHERE id = ?', [id]);
+    const atual = await get('SELECT * FROM ips_monitorados WHERE id = ? AND criado_por_id = ?', [id, req.session.user.id]);
     if (!atual) return res.status(404).json({ error: 'IP não encontrado.' });
 
     const categoria = normalizeIpCategory(req.body.categoria);
@@ -1057,18 +1415,18 @@ app.put('/api/ips/:id', requireAuth, async (req, res) => {
     if (!nome) return res.status(400).json({ error: 'Informe o nome do equipamento.' });
     if (!net.isIPv4(ip)) return res.status(400).json({ error: 'Informe um endereço IPv4 válido.' });
 
-    const duplicado = await get('SELECT id FROM ips_monitorados WHERE ip = ? AND id != ?', [ip, id]);
+    const duplicado = await get('SELECT id FROM ips_monitorados WHERE criado_por_id = ? AND ip = ? AND id != ?', [req.session.user.id, ip, id]);
     if (duplicado) return res.status(409).json({ error: 'Este IP já está cadastrado.' });
 
     await run(
       `UPDATE ips_monitorados
        SET categoria = ?, nome = ?, ip = ?, setor = ?, observacoes = ?, status = 'Não verificado',
            tempo_ms = NULL, verificado_em = NULL, atualizado_em = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [categoria, nome, ip, setor, observacoes, id]
+       WHERE id = ? AND criado_por_id = ?`,
+      [categoria, nome, ip, setor, observacoes, id, req.session.user.id]
     );
 
-    const row = await get('SELECT * FROM ips_monitorados WHERE id = ?', [id]);
+    const row = await get('SELECT * FROM ips_monitorados WHERE id = ? AND criado_por_id = ?', [id, req.session.user.id]);
     const item = await verificarIpSalvo(row);
     await logAction(req.session.user, 'editou IP', 'ips_monitorados', id, `${nome} - ${ip}`);
     res.json(item);
@@ -1081,10 +1439,10 @@ app.put('/api/ips/:id', requireAuth, async (req, res) => {
 app.delete('/api/ips/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const row = await get('SELECT * FROM ips_monitorados WHERE id = ?', [id]);
+    const row = await get('SELECT * FROM ips_monitorados WHERE id = ? AND criado_por_id = ?', [id, req.session.user.id]);
     if (!row) return res.status(404).json({ error: 'IP não encontrado.' });
 
-    await run('DELETE FROM ips_monitorados WHERE id = ?', [id]);
+    await run('DELETE FROM ips_monitorados WHERE id = ? AND criado_por_id = ?', [id, req.session.user.id]);
     await logAction(req.session.user, 'excluiu IP', 'ips_monitorados', id, `${row.nome} - ${row.ip}`);
     res.json({ ok: true });
   } catch (error) {
@@ -1096,7 +1454,7 @@ app.delete('/api/ips/:id', requireAuth, requireAdmin, async (req, res) => {
 app.post('/api/ips/:id/verificar', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const row = await get('SELECT * FROM ips_monitorados WHERE id = ?', [id]);
+    const row = await get('SELECT * FROM ips_monitorados WHERE id = ? AND criado_por_id = ?', [id, req.session.user.id]);
     if (!row) return res.status(404).json({ error: 'IP não encontrado.' });
 
     const item = await verificarIpSalvo(row);
@@ -1109,7 +1467,7 @@ app.post('/api/ips/:id/verificar', requireAuth, async (req, res) => {
 
 app.post('/api/ips/verificar-todos', requireAuth, async (req, res) => {
   try {
-    const rows = await all('SELECT * FROM ips_monitorados ORDER BY id');
+    const rows = await all('SELECT * FROM ips_monitorados WHERE criado_por_id = ? ORDER BY id', [req.session.user.id]);
     const resultados = [];
     const limite = 8;
 
@@ -1124,6 +1482,189 @@ app.post('/api/ips/verificar-todos', requireAuth, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro ao verificar os IPs.' });
+  }
+});
+
+app.post('/api/ips/:id/monitorar', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const duracao = req.body?.duracaoMinutos === null || req.body?.duracaoMinutos === ''
+      ? null
+      : Number(req.body?.duracaoMinutos);
+    if (duracao !== null && !MONITORAMENTO_DURACOES.has(duracao)) {
+      return res.status(400).json({ error: 'DuraÃ§Ã£o invÃ¡lida.' });
+    }
+
+    const ip = await get('SELECT * FROM ips_monitorados WHERE id = ? AND criado_por_id = ?', [id, req.session.user.id]);
+    if (!ip) return res.status(404).json({ error: 'IP nÃ£o encontrado.' });
+
+    const ativo = await get(
+      `SELECT m.id FROM monitoramentos_ip m
+       JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+       WHERE m.ip_monitorado_id = ? AND m.ativo = 1 AND ip.criado_por_id = ?`,
+      [id, req.session.user.id]
+    );
+    if (ativo) return res.status(409).json({ error: 'Este IP jÃ¡ estÃ¡ em monitoramento.' });
+
+    const now = formatDbDate();
+    const result = await transaction(async (tx) => {
+      const created = await tx.run(
+        `INSERT INTO monitoramentos_ip (
+           ip_monitorado_id, iniciado_por_id, iniciado_por_nome, iniciado_em,
+           ativo, duracao_minutos, status_atual
+         ) VALUES (?, ?, ?, ?, 1, ?, 'Iniciando')`,
+        [id, req.session.user.id, req.session.user.nome, now, duracao]
+      );
+      await tx.run(
+        `INSERT INTO monitoramento_ip_eventos (monitoramento_id, tipo, status, tempo_ms, criado_em)
+         VALUES (?, 'iniciado', 'Iniciando', NULL, ?)`,
+        [created.id, now]
+      );
+      return created;
+    });
+
+    agendarMonitoramentoIp(result.id);
+    await logAction(req.session.user, 'iniciou monitoramento de IP', 'monitoramentos_ip', result.id, `${ip.nome} - ${ip.ip}`);
+    res.json(await carregarMonitoramentoIp(result.id));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao iniciar monitoramento.' });
+  }
+});
+
+app.post('/api/monitoramentos-temporarios', requireAuth, async (req, res) => {
+  try {
+    const ip = String(req.body?.ip || '').trim();
+    const nome = String(req.body?.nome || '').trim().slice(0, 100);
+    const duracao = req.body?.duracaoMinutos === null || req.body?.duracaoMinutos === ''
+      ? null
+      : Number(req.body?.duracaoMinutos);
+
+    if (!net.isIPv4(ip)) return res.status(400).json({ error: 'Informe um endereco IPv4 valido.' });
+    if (duracao !== null && !MONITORAMENTO_DURACOES.has(duracao)) {
+      return res.status(400).json({ error: 'Duracao invalida.' });
+    }
+
+    const monitoramento = iniciarMonitoramentoTemporario({ ip, nome, duracaoMinutos: duracao, usuarioId: req.session.user.id, usuarioNome: req.session.user.nome });
+    res.status(201).json(mapMonitoramentoTemporario(monitoramento));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao iniciar monitoramento temporario.' });
+  }
+});
+
+app.get('/api/monitoramentos-temporarios', requireAuth, (req, res) => {
+  const itens = Array.from(monitoramentosTemporarios.values()).filter((item) => item.usuarioId === req.session.user.id)
+    .sort((a, b) => new Date(b.iniciadoEm) - new Date(a.iniciadoEm))
+    .map(mapMonitoramentoTemporario);
+  res.json(itens);
+});
+
+app.get('/api/monitoramentos-temporarios/historico', requireAuth, (req, res) => {
+  res.json(Array.from(historicoMonitoramentosTemporarios.values()).filter((item) => item.usuarioId === req.session.user.id)
+    .sort((a, b) => new Date(b.encerradoEm) - new Date(a.encerradoEm))
+    .map(mapMonitoramentoTemporario));
+});
+
+app.delete('/api/monitoramentos-temporarios/historico', requireAuth, (req, res) => {
+  for (const [id, item] of historicoMonitoramentosTemporarios) if (item.usuarioId === req.session.user.id) historicoMonitoramentosTemporarios.delete(id);
+  res.status(204).end();
+});
+
+app.get('/api/monitoramentos-temporarios/resumo', requireAuth, (req, res) => {
+  const itens = [
+    ...Array.from(monitoramentosTemporarios.values()).filter((item) => item.usuarioId === req.session.user.id),
+    ...Array.from(historicoMonitoramentosTemporarios.values()).filter((item) => item.usuarioId === req.session.user.id)
+  ].map(mapMonitoramentoTemporario);
+  const verificacoes = itens.reduce((sum, item) => sum + item.totalVerificacoes, 0);
+  const falhas = itens.reduce((sum, item) => sum + item.falhasPing, 0);
+  res.json({ ativos: itens.filter((item) => item.ativo).length, quedas: itens.reduce((sum, item) => sum + item.quedas, 0), falhasPing: falhas, disponibilidade: verificacoes ? ((verificacoes - falhas) / verificacoes) * 100 : 100 });
+});
+
+app.get('/api/monitoramentos-temporarios/:id', requireAuth, (req, res) => {
+  const monitoramento = monitoramentosTemporarios.get(req.params.id) || historicoMonitoramentosTemporarios.get(req.params.id);
+  if (monitoramento?.usuarioId !== req.session.user.id) return res.status(404).json({ error: 'Monitoramento temporario nao encontrado.' });
+  if (!monitoramento) return res.status(404).json({ error: 'Monitoramento temporario nao encontrado.' });
+  res.json(mapMonitoramentoTemporario(monitoramento));
+});
+
+app.post('/api/monitoramentos-temporarios/:id/parar', requireAuth, (req, res) => {
+  const monitoramento = monitoramentosTemporarios.get(req.params.id);
+  if (!monitoramento || monitoramento.usuarioId !== req.session.user.id) return res.status(404).json({ error: 'Monitoramento temporario nao encontrado.' });
+  encerrarMonitoramentoTemporario(req.params.id);
+  res.json(mapMonitoramentoTemporario(monitoramento));
+});
+
+app.get('/api/monitoramentos/ativos', requireAuth, async (req, res) => {
+  try {
+    const rows = await all(
+      `SELECT m.*, ip.nome, ip.ip
+       FROM monitoramentos_ip m
+       JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+       WHERE m.ativo = 1 AND ip.criado_por_id = ?
+       ORDER BY m.iniciado_em DESC`, [req.session.user.id]
+    );
+    res.json(rows.map(mapMonitoramentoIp));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao listar monitoramentos ativos.' });
+  }
+});
+
+app.get('/api/monitoramentos/historico', requireAuth, async (req, res) => {
+  try {
+    const rows = await all(
+      `SELECT m.*, ip.nome, ip.ip
+       FROM monitoramentos_ip m
+       JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+       WHERE ip.criado_por_id = ?
+       ORDER BY m.iniciado_em DESC
+       LIMIT 100`, [req.session.user.id]
+    );
+    res.json(rows.map(mapMonitoramentoIp));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao listar histÃ³rico de monitoramentos.' });
+  }
+});
+
+app.get('/api/monitoramentos/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const monitoramento = await get(
+      `SELECT m.*, ip.nome, ip.ip FROM monitoramentos_ip m
+       JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+       WHERE m.id = ? AND ip.criado_por_id = ?`, [id, req.session.user.id]
+    );
+    if (!monitoramento) return res.status(404).json({ error: 'Monitoramento nÃ£o encontrado.' });
+    const eventos = await all(
+      `SELECT * FROM monitoramento_ip_eventos
+       WHERE monitoramento_id = ?
+       ORDER BY criado_em, id`,
+      [id]
+    );
+    res.json({ ...mapMonitoramentoIp(monitoramento), eventos: eventos.map(mapMonitoramentoEvento) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao carregar monitoramento.' });
+  }
+});
+
+app.post('/api/monitoramentos/:id/parar', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = await get(
+      `SELECT m.id, m.ativo FROM monitoramentos_ip m
+       JOIN ips_monitorados ip ON ip.id = m.ip_monitorado_id
+       WHERE m.id = ? AND ip.criado_por_id = ?`, [id, req.session.user.id]
+    );
+    if (!row) return res.status(404).json({ error: 'Monitoramento nÃ£o encontrado.' });
+    await encerrarMonitoramentoIp(id);
+    await logAction(req.session.user, 'encerrou monitoramento de IP', 'monitoramentos_ip', id);
+    res.json(await carregarMonitoramentoIp(id));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao encerrar monitoramento.' });
   }
 });
 
@@ -1178,6 +1719,7 @@ app.use((error, req, res, next) => {
 
 async function startServer(port = PORT, host = '0.0.0.0') {
   await initDB();
+  await restaurarMonitoramentosIpAtivos();
   await run('DELETE FROM sessoes WHERE expira_em <= ?', [Date.now()]);
   const sessionCleanup = setInterval(() => {
     run('DELETE FROM sessoes WHERE expira_em <= ?', [Date.now()]).catch(console.error);

@@ -170,13 +170,6 @@
           <strong id="todayDate">--/--/----</strong>
           <small id="userInfo">Usuário</small>
           <div class="session-actions">
-            <button
-              id="openSleepScreen"
-              class="secondary logout-btn"
-              type="button"
-            >
-              Tela de descanso
-            </button>
             <button id="logoutBtn" class="secondary logout-btn" type="button">
               Sair
             </button>
@@ -884,6 +877,52 @@
           </div>
         </div>
 
+        <div class="ip-temporary-monitor-action">
+          <button id="abrirMonitoramentoTemporario" class="primary" type="button">
+            Monitorar IP temporariamente
+          </button>
+        </div>
+
+        <section
+          id="monitoramentosTemporarios"
+          class="monitoramentos-temporarios app-hidden"
+        >
+          <div class="monitoramentos-ip-header">
+            <strong>MONITORAMENTOS TEMPORÁRIOS</strong>
+          </div>
+          <div id="monitoramentosTemporariosResumo" class="temporario-indicadores"></div>
+          <div id="monitoramentosTemporariosList" class="monitoramentos-temporarios-list"></div>
+          <section id="historicoMonitoramentosTemporarios" class="historico-temporarios">
+            <div class="monitoramentos-ip-header"><strong>HISTÓRICO RECENTE</strong><button id="limparHistoricoMonitoramentosTemporarios" class="secondary" type="button">Limpar histórico</button></div>
+            <div id="historicoMonitoramentosTemporariosList" class="historico-temporarios-list"></div>
+          </section>
+        </section>
+
+        <section
+          id="monitoramentosIpAtivos"
+          class="monitoramentos-ip-ativos app-hidden"
+        >
+          <div class="monitoramentos-ip-header">
+            <strong>MONITORAMENTOS ATIVOS</strong>
+          </div>
+          <div class="monitoramento-ip-grid monitoramento-ip-grid-head">
+            <span>Nome / IP</span>
+            <span>Status atual</span>
+            <span>Tempo monitorado</span>
+            <span>VerificaÃ§Ãµes</span>
+            <span>Quedas</span>
+            <span>Falhas</span>
+            <span>Tempo offline</span>
+            <span>Maior queda</span>
+            <span>Disponibilidade</span>
+            <span>AÃ§Ãµes</span>
+          </div>
+          <div
+            id="monitoramentosIpAtivosList"
+            class="monitoramentos-ip-list"
+          ></div>
+        </section>
+
         <div class="ip-category-tabs" aria-label="Categorias de IP">
           <button
             class="ip-category-tab active"
@@ -1030,6 +1069,106 @@
         <div id="ipsList" class="cards-list ip-list"></div>
       </section>
 
+      <div id="monitoramentoIpModal" class="app-modal app-hidden">
+        <form id="monitoramentoIpForm" class="app-modal-card">
+          <div class="app-modal-header">
+            <div>
+              <strong>Monitoramento temporÃ¡rio</strong>
+              <span id="monitoramentoIpNome">-</span>
+              <small id="monitoramentoIpEndereco">-</small>
+            </div>
+            <button id="monitoramentoIpModalClose" type="button" class="secondary">
+              Fechar
+            </button>
+          </div>
+          <label>
+            DuraÃ§Ã£o
+            <select id="monitoramentoIpDuracao">
+              <option value="5">5 min</option>
+              <option value="15" selected>15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hora</option>
+              <option value="">AtÃ© eu parar</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button type="submit" class="primary">Iniciar monitoramento</button>
+            <button id="monitoramentoIpModalCancel" type="button" class="secondary">
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div id="monitoramentoIpDetalhes" class="app-modal app-hidden">
+        <div class="app-modal-card">
+          <div class="app-modal-header">
+            <div>
+              <strong>Linha do tempo</strong>
+              <span id="monitoramentoIpDetalhesTitulo">-</span>
+            </div>
+            <button id="monitoramentoIpDetalhesClose" type="button" class="secondary">
+              Fechar
+            </button>
+          </div>
+          <ol id="monitoramentoIpTimeline" class="monitoramento-ip-timeline"></ol>
+        </div>
+      </div>
+
+      <div id="monitoramentoTemporarioModal" class="app-modal app-hidden">
+        <form id="monitoramentoTemporarioForm" class="app-modal-card">
+          <div class="app-modal-header">
+            <div>
+              <strong>Monitorar IP temporariamente</strong>
+              <span>O IP nao sera adicionado a lista cadastrada.</span>
+            </div>
+            <button id="monitoramentoTemporarioModalClose" type="button" class="secondary">
+              Fechar
+            </button>
+          </div>
+          <label>
+            Nome opcional
+            <input id="monitoramentoTemporarioNome" maxlength="100" autocomplete="off" />
+          </label>
+          <label>
+            IP
+            <input id="monitoramentoTemporarioIp" required inputmode="decimal" placeholder="192.168.1.50" autocomplete="off" />
+          </label>
+          <label>
+            Duracao
+            <select id="monitoramentoTemporarioDuracao">
+              <option value="5">5 minutos</option>
+              <option value="15" selected>15 minutos</option>
+              <option value="30">30 minutos</option>
+              <option value="60">1 hora</option>
+              <option value="">Ate eu parar</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button type="submit" class="primary">Iniciar monitoramento</button>
+            <button id="monitoramentoTemporarioModalCancel" type="button" class="secondary">
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div id="monitoramentoTemporarioDetalhes" class="app-modal app-hidden">
+        <div class="app-modal-card">
+          <div class="app-modal-header">
+            <div>
+              <strong>Monitoramento temporario</strong>
+              <span id="monitoramentoTemporarioDetalhesTitulo">-</span>
+            </div>
+            <button id="monitoramentoTemporarioDetalhesClose" type="button" class="secondary">
+              Fechar
+            </button>
+          </div>
+          <div id="monitoramentoTemporarioResumo" class="monitoramento-temporario-resumo"></div>
+          <ol id="monitoramentoTemporarioTimeline" class="monitoramento-ip-timeline"></ol>
+        </div>
+      </div>
+
       <section id="administracao" class="panel">
         <div class="panel-header">
           <div>
@@ -1094,41 +1233,6 @@
     </template>
 
     <div id="toast" class="toast"></div>
-    <div
-      id="sleepScreen"
-      class="sleep-screen app-hidden"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="sleepScreenTitle"
-      aria-describedby="sleepScreenHelp"
-      aria-hidden="true"
-    >
-      <div class="sleep-bg" aria-hidden="true"></div>
-      <div class="sleep-particles" aria-hidden="true"></div>
-
-      <div class="sleep-content">
-        <span class="sleep-label">Modo descanso</span>
-        <h1 class="sleep-title" id="sleepScreenTitle">Rotina TI</h1>
-
-        <div class="sleep-clock" id="sleepClock">00:00:00</div>
-        <div class="sleep-weekday" id="sleepWeekday">quinta-feira</div>
-        <div class="sleep-date" id="sleepDate">23 de julho de 2026</div>
-
-        <div class="sleep-info">
-          <span>Sistema operacional ativo</span>
-          <span id="sleepUser">Usuário conectado</span>
-        </div>
-
-        <button id="closeSleepScreen" class="sleep-close" type="button">
-          Voltar ao painel
-        </button>
-        <div class="sleep-tip" id="sleepScreenHelp">
-          Pressione <strong>ESC</strong> ou use o botão para voltar ao painel.
-        </div>
-      </div>
-    </div>
-
-    <script src="sleep-screen.js"></script>
     <script src="dashboard-model.js"></script>
     <script src="script.js"></script>
   </body>

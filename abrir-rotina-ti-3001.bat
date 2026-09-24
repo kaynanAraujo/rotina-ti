@@ -3,7 +3,7 @@ setlocal
 title Rotina TI - Servidor Local
 cd /d "%~dp0"
 
-set "PORT=3000"
+set "PORT=3001"
 set "URL_LOCAL=http://localhost:3001"
 set "URL_REDE=http://%COMPUTERNAME%:3001"
 set "URL_HEALTH=http://127.0.0.1:3001/api/health"
@@ -97,15 +97,15 @@ echo Rotina TI iniciado com sucesso.
 goto OPEN_BROWSER
 
 :ROTINA_ALREADY_RUNNING
-echo Rotina TI ja esta funcionando na porta 3000.
+echo Rotina TI ja esta funcionando na porta 3001.
 echo Nenhuma nova instancia sera iniciada.
 goto OPEN_BROWSER
 
 :PORT_IN_USE
 echo.
-echo ERRO: a porta 3000 esta ocupada por outro programa.
+echo ERRO: a porta 3001 esta ocupada por outro programa.
 echo O endereco %URL_HEALTH% nao respondeu como Rotina TI.
-echo Feche o outro programa ou libere a porta 3000 antes de tentar novamente.
+echo Feche o outro programa ou libere a porta 3001 antes de tentar novamente.
 pause
 exit /b 1
 
@@ -142,7 +142,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { $response = In
 exit /b %errorlevel%
 
 :CHECK_PORT
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$client = New-Object System.Net.Sockets.TcpClient; try { $attempt = $client.BeginConnect('127.0.0.1', 3000, $null, $null); if (-not $attempt.AsyncWaitHandle.WaitOne(1000)) { $client.Close(); exit 1 }; $client.EndConnect($attempt); $client.Close(); exit 0 } catch { $client.Close(); exit 1 }" >nul 2>nul
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$client = New-Object System.Net.Sockets.TcpClient; try { $attempt = $client.BeginConnect('127.0.0.1', 3001, $null, $null); if (-not $attempt.AsyncWaitHandle.WaitOne(1000)) { $client.Close(); exit 1 }; $client.EndConnect($attempt); $client.Close(); exit 0 } catch { $client.Close(); exit 1 }" >nul 2>nul
 exit /b %errorlevel%
 
 :WAIT_FOR_HEALTH

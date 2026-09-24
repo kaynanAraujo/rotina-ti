@@ -520,13 +520,12 @@ test("integra APIs reais ao Dashboard sem misturar pendências pessoais", async 
     technicianInput.historicoManutencoes,
   );
   assert.deepEqual(adminInput.ipsMonitorados, []);
-
   assert.deepEqual(sharedCounts(technicianModel), {
     manutencoesAtivas: 3,
     manutencoesAguardandoRetorno: 1,
-    ipsMonitorados: 4,
-    ipsOffline: 2,
   });
+  assert.equal(adminModel.contagens.ipsMonitorados, 0);
+  assert.equal(adminModel.contagens.ipsOffline, 0);
 
   assert.deepEqual(emptyUserInput.pendencias, []);
   assert.deepEqual(emptyUserInput.historicoTarefas, []);

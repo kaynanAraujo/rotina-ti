@@ -11,13 +11,17 @@ const dashboardModel = fs.readFileSync(
   path.join(projectRoot, 'public', 'dashboard-model.js'),
   'utf8'
 );
-const sleepScript = fs.readFileSync(
-  path.join(projectRoot, 'public', 'sleep-screen.js'),
-  'utf8'
-);
 
 function htmlIds(source) {
   return [...source.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
+}
+
+function sourceSection(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.ok(start >= 0, `Marcador inicial ausente: ${startMarker}`);
+  assert.ok(end > start, `Marcador final ausente: ${endMarker}`);
+  return source.slice(start, end);
 }
 
 test('mantém IDs únicos e todas as referências estáticas do JavaScript', () => {
@@ -39,13 +43,6 @@ test('mantém IDs únicos e todas as referências estáticas do JavaScript', () 
     'authScreen',
     'appContent',
     'logoutBtn',
-    'openSleepScreen',
-    'closeSleepScreen',
-    'sleepScreen',
-    'sleepClock',
-    'sleepWeekday',
-    'sleepDate',
-    'sleepUser',
     'pendenciaForm',
     'manutencaoForm',
     'manutencaoPdf',
@@ -76,34 +73,6 @@ test('mantém IDs únicos e todas as referências estáticas do JavaScript', () 
   ]) {
     assert.ok(uniqueIds.has(requiredId), `ID obrigatório ausente: ${requiredId}`);
   }
-});
-
-test('carrega o controlador antes da aplicação e mantém overlay acessível', () => {
-  const controllerPosition = html.indexOf('<script src="sleep-screen.js"></script>');
-  const dashboardPosition = html.indexOf(
-    '<script src="dashboard-model.js"></script>'
-  );
-  const appPosition = html.indexOf('<script src="script.js"></script>');
-  assert.ok(controllerPosition >= 0);
-  assert.ok(dashboardPosition > controllerPosition);
-  assert.ok(appPosition > controllerPosition);
-  assert.ok(appPosition > dashboardPosition);
-
-  const overlay = html.match(/<div\s+id="sleepScreen"[\s\S]*?>/);
-  assert.ok(overlay);
-  assert.match(overlay[0], /role="dialog"/);
-  assert.match(overlay[0], /aria-modal="true"/);
-  assert.match(overlay[0], /aria-hidden="true"/);
-  assert.match(html, /id="closeSleepScreen"[\s\S]*?>\s*Voltar ao painel/);
-  assert.doesNotMatch(html, /clique para voltar/i);
-  assert.doesNotMatch(html, /<style\b/i);
-
-  assert.match(sleepScript, /DEFAULT_TIMEOUT_MS\s*=\s*300000/);
-  assert.doesNotMatch(script, /\bsetInterval\s*\(/);
-  assert.doesNotMatch(
-    sleepScript,
-    /elements\.overlay\??\.addEventListener\s*\(\s*["']click/
-  );
 });
 
 test('Dashboard é a primeira tela, usa cards acessíveis e mantém todas as abas existentes', () => {
@@ -173,6 +142,116 @@ test('Dashboard é local, deduplica carregamentos e não cria polling', () => {
         !/^https?:\/\//i.test(asset) && !/^\/\//.test(asset)
     ),
     'O Dashboard não pode depender de CDN ou recurso externo.'
+  );
+});
+
+test('Monitor de IPs verifica automaticamente sem sobrepor execuções ou alterar o fluxo manual', () => {
+  assert.match(script, /const IP_AUTO_CHECK_INTERVAL_MS\s*=\s*3000;/);
+  assert.match(script, /let autoIpCheckTimer\s*=\s*null;/);
+  assert.match(script, /let autoIpCheckRunning\s*=\s*false;/);
+  assert.match(script, /let ipCheckPromise\s*=\s*null;/);
+
+  const automaticCheck = sourceSection(
+    script,
+    'async function executarAutoVerificacaoIps()',
+    'function agendarAutoVerificacaoIps()'
+  );
+  assert.match(automaticCheck, /if\s*\(autoIpCheckRunning\)\s*return;/);
+  assert.match(
+    automaticCheck,
+    /document\.getElementById\(["']appContent["']\)/
+  );
+  assert.match(
+    automaticCheck,
+    /await verificarTodosIps\(\{\s*silent:\s*true\s*\}\);/
+  );
+  assert.doesNotMatch(automaticCheck, /\.(?:click|dispatchEvent)\s*\(/);
+  assert.match(
+    automaticCheck,
+    /finally\s*\{[\s\S]*?autoIpCheckRunning\s*=\s*false;[\s\S]*?agendarAutoVerificacaoIps\(\);/
+  );
+
+  const scheduler = sourceSection(
+    script,
+    'function agendarAutoVerificacaoIps()',
+    'function iniciarAutoVerificacaoIps()'
+  );
+  const clearPosition = scheduler.indexOf('clearTimeout(autoIpCheckTimer)');
+  const setPosition = scheduler.indexOf('autoIpCheckTimer = setTimeout(');
+  assert.ok(clearPosition >= 0);
+  assert.ok(setPosition > clearPosition);
+  assert.match(
+    scheduler,
+    /setTimeout\(\s*executarAutoVerificacaoIps,\s*IP_AUTO_CHECK_INTERVAL_MS/
+  );
+
+  const start = sourceSection(
+    script,
+    'function iniciarAutoVerificacaoIps()',
+    'function pararAutoVerificacaoIps()'
+  );
+  assert.match(start, /autoIpCheckEnabled\s*=\s*true;/);
+  assert.match(start, /agendarAutoVerificacaoIps\(\);/);
+
+  const stop = sourceSection(
+    script,
+    'function pararAutoVerificacaoIps()',
+    'async function verificarTodosIps('
+  );
+  assert.match(stop, /autoIpCheckEnabled\s*=\s*false;/);
+  assert.match(stop, /clearTimeout\(autoIpCheckTimer\);/);
+  assert.match(stop, /autoIpCheckTimer\s*=\s*null;/);
+
+  const verification = sourceSection(
+    script,
+    'async function verificarTodosIps(',
+    'async function deleteIp('
+  );
+  assert.match(
+    verification,
+    /async function verificarTodosIps\(\{\s*silent\s*=\s*false\s*\}\s*=\s*\{\}\)/
+  );
+  assert.match(verification, /\/api\/ips\/verificar-todos/);
+  assert.match(verification, /trackBusy:\s*false/);
+  assert.match(verification, /let operation\s*=\s*ipCheckPromise;/);
+  assert.match(verification, /if\s*\(!operation\)\s*\{/);
+  assert.match(verification, /ipCheckPromise\s*=\s*operation;/);
+  assert.match(verification, /await operation;/);
+  assert.match(verification, /renderIps\(\);\s*renderDashboard\(\);/);
+  assert.match(
+    verification,
+    /if\s*\(!silent\s*&&\s*button\)\s*\{[\s\S]*?Verificando\.\.\./
+  );
+  assert.match(
+    verification,
+    /if\s*\(!silent\)\s*\{[\s\S]*?const online[\s\S]*?IPs responderam/
+  );
+  assert.match(verification, /if\s*\(silent\)\s*throw error;/);
+  assert.match(
+    verification,
+    /if\s*\(ipCheckPromise\s*===\s*operation\)\s*\{[\s\S]*?ipCheckPromise\s*=\s*null;/
+  );
+
+  const startsAfterInitialLoad =
+    script.match(
+      /await loadAll\(\);\s*iniciarAutoVerificacaoIps\(\);/g
+    ) || [];
+  assert.equal(startsAfterInitialLoad.length, 3);
+  assert.doesNotMatch(
+    sourceSection(script, 'function showApp()', 'function showAuth()'),
+    /iniciarAutoVerificacaoIps/
+  );
+  assert.doesNotMatch(
+    sourceSection(script, 'async function loadAll()', 'async function loadPendencias()'),
+    /iniciarAutoVerificacaoIps/
+  );
+  assert.match(
+    script,
+    /api\(["']\/api\/auth\/logout["'][\s\S]*?pararAutoVerificacaoIps\(\);[\s\S]*?location\.reload\(\);/
+  );
+  assert.match(
+    script,
+    /verificarTodosIps["']\)\.addEventListener\(["']click["'],\s*\(\)\s*=>\s*verificarTodosIps\(\)/
   );
 });
 
